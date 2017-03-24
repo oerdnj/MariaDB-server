@@ -6,7 +6,7 @@
 #
 # MDEV-11004: Unable to start (Segfault or os error 2) when encryption key missing
 #
-call mtr.add_suppression("InnoDB: The page .* in file test/t. cannot be decrypted");
+call mtr.add_suppression("InnoDB: The page .*");
 
 --echo
 --echo # Start server with keys2.txt

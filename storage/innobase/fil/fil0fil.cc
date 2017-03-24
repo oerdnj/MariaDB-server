@@ -325,7 +325,6 @@ fil_space_get_by_id(
 	return(space);
 }
 
-/*******************************************************************//**
 Returns the table space by a given name, NULL if not found. */
 UNIV_INLINE
 fil_space_t*
@@ -879,7 +878,7 @@ fil_flush_low(fil_space_t* space)
 {
 	ut_ad(mutex_own(&fil_system->mutex));
 	ut_ad(space);
-	ut_ad(!space->stop_new_ops);
+	ut_ad(!space->is_stopping());
 
 	if (fil_buffering_disabled(space)) {
 
@@ -5436,6 +5435,7 @@ fil_aio_wait(
 	mutex_enter(&fil_system->mutex);
 
 	fil_node_complete_io(node, type);
+	ulint purpose = fil_node->space->purpose;
 
 	mutex_exit(&fil_system->mutex);
 
@@ -5447,7 +5447,7 @@ fil_aio_wait(
 	deadlocks in the i/o system. We keep tablespace 0 data files always
 	open, and use a special i/o thread to serve insert buffer requests. */
 
-	switch (node->space->purpose) {
+	switch (purpose) {
 	case FIL_TYPE_TABLESPACE:
 	case FIL_TYPE_TEMPORARY:
 	case FIL_TYPE_IMPORT:
@@ -5456,7 +5456,25 @@ fil_aio_wait(
 		/* async single page writes from the dblwr buffer don't have
 		access to the page */
 		if (message != NULL) {
-			buf_page_io_complete(static_cast<buf_page_t*>(message));
+			buf_page_t *bpage = static_cast<buf_page_t*>(message);
+			const page_id_t page_id = bpage->id;
+			dberr_t err = buf_page_io_complete(bpage);
+
+			if (err != DB_SUCCESS) {
+
+				/* In crash recovery set log corruption on
+				and produce only an error to fail InnoDB startup. */
+				if (recv_recovery_is_on()) {
+					recv_sys->found_corrupt_log = true;
+				}
+
+				ib::error()
+					<< (type == IORequestRead ? "Read" : "Write")
+					<< "operation failed for " << node->name
+					<< " page " << page_id
+					<< " error= " << ut_strerr(err);
+			}
+
 		}
 		return;
 	case FIL_TYPE_LOG:

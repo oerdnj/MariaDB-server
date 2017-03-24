@@ -1180,7 +1180,7 @@ dict_table_open_on_name(
 
 		/* If table is encrypted return table */
 		if (ignore_err == DICT_ERR_IGNORE_NONE
-			&& table->is_encrypted) {
+			&& table->file_unreadable) {
 			/* Make life easy for drop table. */
 			dict_table_prevent_eviction(table);
 
@@ -6067,9 +6067,27 @@ dict_set_corrupted_by_space(
 
 	/* mark the table->corrupted bit only, since the caller
 	could be too deep in the stack for SYS_INDEXES update */
-	table->corrupted = TRUE;
+	table->corrupted = true;
 
 	return(TRUE);
+}
+
+/**********************************************************************//**
+Flags a table with specified space_id encrypted in the data dictionary
+cache
+@param[in]	space_id	Tablespace id */
+UNIV_INTERN
+void
+dict_set_encrypted_by_space(
+	ulint	space_id)
+{
+	dict_table_t*   table;
+
+	table = dict_find_single_table_by_space(space_id);
+
+	if (table) {
+		table->file_unreadable = true;
+	}
 }
 
 /**********************************************************************//**
@@ -6581,7 +6599,8 @@ dict_table_schema_check(
 		}
 	}
 
-	if (table->ibd_file_missing) {
+	if (table->file_unreadable &&
+	    fil_space_get(table->space) == NULL) {
 		/* missing tablespace */
 
 		ut_snprintf(errstr, errstr_sz,

@@ -4871,7 +4871,7 @@ new_clustered_failed:
 		clustered index of the old table, later. */
 		if (new_clustered
 		    || !ctx->online
-		    || user_table->ibd_file_missing
+		    || user_table->file_unreadable
 		    || dict_table_is_discarded(user_table)) {
 			/* No need to allocate a modification log. */
 			ut_ad(!ctx->add_index[a]->online_log);
@@ -5553,7 +5553,8 @@ ha_innobase::prepare_inplace_alter_table(
 
 	indexed_table = m_prebuilt->table;
 
-	if (indexed_table->is_encrypted) {
+	if (indexed_table->file_unreadable &&
+	    fil_space_get(indexed_table->space) != NULL) {
 		String str;
 		const char* engine= table_type();
 		push_warning_printf(m_user_thd, Sql_condition::WARN_LEVEL_WARN,
@@ -5594,6 +5595,38 @@ ha_innobase::prepare_inplace_alter_table(
 		if (info.gcols_in_fulltext_or_spatial()) {
 			goto err_exit_no_heap;
 		}
+	}
+
+	indexed_table = prebuilt->table;
+
+	if (indexed_table->file_unreadable &&
+	    fil_space_get(indexed_table->space) != NULL) {
+		String str;
+		const char* engine= table_type();
+		push_warning_printf(user_thd, Sql_condition::WARN_LEVEL_WARN,
+			HA_ERR_DECRYPTION_FAILED,
+			"Table %s is encrypted but encryption service or"
+			" used key_id is not available. "
+			" Can't continue reading table.",
+			indexed_table->name);
+		get_error_message(HA_ERR_DECRYPTION_FAILED, &str);
+		my_error(ER_GET_ERRMSG, MYF(0), HA_ERR_DECRYPTION_FAILED, str.c_ptr(), engine);
+
+		DBUG_RETURN(true);
+	}
+
+	if (indexed_table->corrupted
+	    || dict_table_get_first_index(indexed_table) == NULL
+	    || dict_index_is_corrupted(
+		    dict_table_get_first_index(indexed_table))) {
+		/* The clustered index is corrupted. */
+		my_error(ER_CHECK_NO_SUCH_TABLE, MYF(0));
+		DBUG_RETURN(true);
+	}
+
+	if (!(ha_alter_info->handler_flags & ~INNOBASE_INPLACE_IGNORE)) {
+		/* Nothing to do */
+		goto func_exit;
 	}
 
 	if (ha_alter_info->handler_flags
@@ -6369,7 +6402,7 @@ ok_exit:
 
 	ctx->m_stage = UT_NEW_NOKEY(ut_stage_alter_t(pk));
 
-	if (m_prebuilt->table->ibd_file_missing
+	if (m_prebuilt->table->file_unreadable
 	    || dict_table_is_discarded(m_prebuilt->table)) {
 		goto all_done;
 	}
@@ -7777,7 +7810,7 @@ commit_try_rebuild(
 	/* The new table must inherit the flag from the
 	"parent" table. */
 	if (dict_table_is_discarded(user_table)) {
-		rebuilt_table->ibd_file_missing = true;
+		rebuilt_table->file_unreadable = true;
 		rebuilt_table->flags2 |= DICT_TF2_DISCARDED;
 	}
 
@@ -8289,15 +8322,15 @@ alter_stats_rebuild(
 
 	DBUG_EXECUTE_IF(
 		"ib_rename_index_fail2",
-		ibd_file_missing_orig = table->ibd_file_missing;
-		table->ibd_file_missing = TRUE;
+		ibd_file_missing_orig = table->file_unreadable;
+		table->file_unreadable = true;
 	);
 
 	dberr_t	ret = dict_stats_update(table, DICT_STATS_RECALC_PERSISTENT);
 
 	DBUG_EXECUTE_IF(
 		"ib_rename_index_fail2",
-		table->ibd_file_missing = ibd_file_missing_orig;
+		table->file_unreadable = ibd_file_missing_orig;
 	);
 
 	if (ret != DB_SUCCESS) {
@@ -8427,6 +8460,19 @@ ha_innobase::commit_inplace_alter_table(
 		ha_innobase_inplace_ctx*	ctx
 			= static_cast<ha_innobase_inplace_ctx*>(*pctx);
 		DBUG_ASSERT(ctx->prebuilt->trx == m_prebuilt->trx);
+
+		/* If decryption failed for old table or new table
+		fail here. */
+		if ((ctx->old_table->file_unreadable &&
+		     fil_space_get(ctx->old_table->space) != NULL)||
+		    (ctx->new_table->file_unreadable &&
+		     fil_space_get(ctx->new_table->space) != NULL)) {
+			String str;
+			const char* engine= table_type();
+			get_error_message(HA_ERR_DECRYPTION_FAILED, &str);
+			my_error(ER_GET_ERRMSG, MYF(0), HA_ERR_DECRYPTION_FAILED, str.c_ptr(), engine);
+			DBUG_RETURN(true);
+		}
 
 		/* Exclusively lock the table, to ensure that no other
 		transaction is holding locks on the table while we
