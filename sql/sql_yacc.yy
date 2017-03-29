@@ -925,6 +925,7 @@ bool my_yyoverflow(short **a, YYSTYPE **b, ulong *yystacksize);
 %token  BIT_XOR                       /* MYSQL-FUNC */
 %token  BLOB_SYM                      /* SQL-2003-R */
 %token  BLOCK_SYM
+%token  BODY_SYM                      /* Oracle-R   */
 %token  BOOLEAN_SYM                   /* SQL-2003-R */
 %token  BOOL_SYM
 %token  BOTH                          /* SQL-2003-R */
@@ -1307,6 +1308,7 @@ bool my_yyoverflow(short **a, YYSTYPE **b, ulong *yystacksize);
 %token  OUT_SYM                       /* SQL-2003-R */
 %token  OVER_SYM
 %token  OWNER_SYM
+%token  PACKAGE_SYM                   /* Oracle-R */
 %token  PACK_KEYS_SYM
 %token  PAGE_SYM
 %token  PAGE_CHECKSUM_SYM
@@ -14502,6 +14504,7 @@ keyword_sp:
         | AVG_SYM                  {}
         | BIT_SYM                  {}
         | BLOCK_SYM                {}
+        | BODY_SYM                 {}
         | BOOL_SYM                 {}
         | BOOLEAN_SYM              {}
         | BTREE_SYM                {}
@@ -14692,6 +14695,7 @@ keyword_sp:
         | ONE_SYM                  {}
         | ONLINE_SYM               {}
         | ONLY_SYM                 {}
+        | PACKAGE_SYM              {}
         | PACK_KEYS_SYM            {}
         | PAGE_SYM                 {}
         | PARTIAL                  {}

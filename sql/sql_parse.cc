@@ -564,6 +564,10 @@ void init_update_queries(void)
                                             CF_INSERTS_DATA;
   sql_command_flags[SQLCOM_CREATE_DB]=      CF_CHANGES_DATA | CF_AUTO_COMMIT_TRANS | CF_DB_CHANGE;
   sql_command_flags[SQLCOM_DROP_DB]=        CF_CHANGES_DATA | CF_AUTO_COMMIT_TRANS | CF_DB_CHANGE;
+  sql_command_flags[SQLCOM_CREATE_PACKAGE]= CF_CHANGES_DATA | CF_AUTO_COMMIT_TRANS | CF_DB_CHANGE;
+  sql_command_flags[SQLCOM_DROP_PACKAGE]=   CF_CHANGES_DATA | CF_AUTO_COMMIT_TRANS | CF_DB_CHANGE;
+  sql_command_flags[SQLCOM_CREATE_PACKAGE_BODY]= CF_CHANGES_DATA | CF_AUTO_COMMIT_TRANS;
+  sql_command_flags[SQLCOM_DROP_PACKAGE_BODY]= CF_CHANGES_DATA | CF_AUTO_COMMIT_TRANS;
   sql_command_flags[SQLCOM_ALTER_DB_UPGRADE]= CF_AUTO_COMMIT_TRANS;
   sql_command_flags[SQLCOM_ALTER_DB]=       CF_CHANGES_DATA | CF_AUTO_COMMIT_TRANS;
   sql_command_flags[SQLCOM_RENAME_TABLE]=   CF_CHANGES_DATA | CF_AUTO_COMMIT_TRANS;
@@ -835,6 +839,10 @@ void init_update_queries(void)
   sql_command_flags[SQLCOM_DROP_INDEX]|=       CF_DISALLOW_IN_RO_TRANS;
   sql_command_flags[SQLCOM_CREATE_DB]|=        CF_DISALLOW_IN_RO_TRANS;
   sql_command_flags[SQLCOM_DROP_DB]|=          CF_DISALLOW_IN_RO_TRANS;
+  sql_command_flags[SQLCOM_CREATE_PACKAGE]|=   CF_DISALLOW_IN_RO_TRANS;
+  sql_command_flags[SQLCOM_DROP_PACKAGE]|=     CF_DISALLOW_IN_RO_TRANS;
+  sql_command_flags[SQLCOM_CREATE_PACKAGE_BODY]|= CF_DISALLOW_IN_RO_TRANS;
+  sql_command_flags[SQLCOM_DROP_PACKAGE_BODY]|= CF_DISALLOW_IN_RO_TRANS;
   sql_command_flags[SQLCOM_ALTER_DB_UPGRADE]|= CF_DISALLOW_IN_RO_TRANS;
   sql_command_flags[SQLCOM_ALTER_DB]|=         CF_DISALLOW_IN_RO_TRANS;
   sql_command_flags[SQLCOM_CREATE_VIEW]|=      CF_DISALLOW_IN_RO_TRANS;
@@ -3018,6 +3026,162 @@ error: /* Used by WSREP_TO_ISOLATION_BEGIN */
 }
 
 
+static int mysql_create_package_body(THD *thd, Package_body *package)
+{
+  List_iterator<LEX> it(package->m_lex_list);
+  LEX *oldlex= thd->lex;
+  int rc= 0;
+  for (LEX *lex; (lex= it++); )
+  {
+    thd->lex= lex;
+    thd->lex->definer= oldlex->definer;
+    // Copy the package name as the database name
+    thd->lex->spname->m_db= oldlex->name;
+    thd->lex->sphead->m_db= oldlex->name;
+    if ((rc= mysql_create_routine(thd, lex)))
+      break;
+  }
+  thd->lex= oldlex;
+  return rc;
+}
+
+
+/**
+  Check if the database "db" looks like a package,
+  so "DROP PACKAGE" or "DROP PACKAGE BODY" can be applied.
+
+  If the database has some files other than "db.opt"
+  (e.g. tables, views, etc) then it's not a package.
+  Otherwise, we assume that it is a package.
+
+  @param  thd       - the current THD
+  @param  db        - the database name
+  @param  if_exists - if the IF EXISTS clause is given
+
+  @retval 0         - OK, the database exists and looks like a package
+  @retval 1         - ERROR: the database directory does not exists
+  @retval -1        - ERROR: not a package (this is a real database,
+*/
+static int check_drop_package(THD *thd, char *db, bool if_exists)
+{
+  int rc= 0;
+  MY_DIR *dirp;
+  char path[FN_REFLEN + 16];
+  char db_tmp[SAFE_NAME_LEN];
+  char *dbnorm= normalize_db_name(db, db_tmp, sizeof(db_tmp));
+  build_table_filename(path, sizeof(path) - 1, dbnorm, "", "", 0);
+  if (!(dirp= my_dir(path, MY_THREAD_SPECIFIC)))
+  {
+    if (!if_exists)
+    {
+      my_printf_error(ER_UNKNOWN_ERROR,
+                      "Unknown package '%-.192s'", MYF(0), db);
+    }
+    else
+    {
+      push_warning_printf(thd, Sql_condition::WARN_LEVEL_NOTE,
+                          ER_UNKNOWN_ERROR,
+                          "Unknown package '%-.192s'", db);
+      my_ok(thd);
+    }
+    return 1;
+  }
+  else
+  {
+    for (uint i= 0; i < (uint) dirp->number_of_files; i++)
+    {
+      FILEINFO *file= dirp->dir_entry + i;
+      if (strcmp(file->name, MY_DB_OPT_FILE))
+      {
+        my_printf_error(ER_UNKNOWN_ERROR, "Database %s has some files. "
+                        "Use DROP DATABASE to drop it.", MYF(0), db);
+
+        rc= -1;
+        break;
+      }
+    }
+  }
+  my_dirend(dirp);
+  return rc;
+}
+
+
+static bool mysql_drop_package(THD *thd, char *db, bool if_exists)
+{
+  int rc= check_drop_package(thd, db, if_exists);
+  if (rc > 0)
+    return !if_exists; // The database does not exist
+  if (rc < 0)
+    return true;       // The database exists, but it's not a package.
+  // The database exists and looks like a package
+  return mysql_rm_db(thd, db, if_exists);
+}
+
+
+static bool mysql_drop_package_body(THD *thd, char *db, bool if_exists)
+{
+  int rc= check_drop_package(thd, db, if_exists);
+  if (rc > 0)          // The database does not exist
+    return !if_exists;
+  if (rc < 0)
+    return true;       // The database exists, but it's not a package.
+  // The database exists and looks like a package
+  char db_tmp[SAFE_NAME_LEN];
+  char *dbnorm= normalize_db_name(db, db_tmp, sizeof(db_tmp));
+  if (sp_drop_db_routines(thd, dbnorm))
+    return true;
+  my_ok(thd);
+  return false;
+}
+
+
+static bool prepare_db_action(THD *thd, ulong want_access, LEX_STRING *dbname)
+{
+  if (check_db_name(dbname))
+  {
+    my_error(ER_WRONG_DB_NAME, MYF(0), dbname->str);
+    return true;
+  }
+  /*
+    If in a slave thread :
+    CREATE DATABASE DB was certainly not preceded by USE DB.
+    For that reason, db_ok() in sql/slave.cc did not check the
+    do_db/ignore_db. And as this query involves no tables, tables_ok()
+    above was not called. So we have to check rules again here.
+  */
+#ifdef HAVE_REPLICATION
+  if (thd->slave_thread)
+  {
+    Rpl_filter *rpl_filter;
+    rpl_filter= thd->system_thread_info.rpl_sql_info->rpl_filter;
+    if (!rpl_filter->db_ok(dbname->str) ||
+        !rpl_filter->db_ok_with_wild_table(dbname->str))
+    {
+      my_message(ER_SLAVE_IGNORED_TABLE,
+                 ER_THD(thd, ER_SLAVE_IGNORED_TABLE), MYF(0));
+      return true;
+    }
+  }
+#endif
+  return check_access(thd, want_access, dbname->str, NULL, NULL, 1, 0);
+}
+
+
+static bool mysql_create_db_prepare(THD *thd, LEX_STRING *dbname)
+{
+  return prepare_db_action(thd,
+                           thd->lex->create_info.or_replace() ?
+                             (CREATE_ACL | DROP_ACL) : CREATE_ACL,
+                           dbname);
+}
+
+
+static bool mysql_drop_db_prepare(THD *thd, LEX_STRING *dbname)
+{
+  return prepare_db_action(thd, DROP_ACL, dbname);
+}
+
+
 /**
   Execute command saved in thd and lex->sql_command.
 
@@ -5019,71 +5183,45 @@ end_with_restore_list:
       my_ok(thd);
     }
     break;
+  case SQLCOM_CREATE_PACKAGE:
   case SQLCOM_CREATE_DB:
   {
-    if (check_db_name(&lex->name))
-    {
-      my_error(ER_WRONG_DB_NAME, MYF(0), lex->name.str);
-      break;
-    }
-    /*
-      If in a slave thread :
-      CREATE DATABASE DB was certainly not preceded by USE DB.
-      For that reason, db_ok() in sql/slave.cc did not check the
-      do_db/ignore_db. And as this query involves no tables, tables_ok()
-      above was not called. So we have to check rules again here.
-    */
-#ifdef HAVE_REPLICATION
-    if (thd->slave_thread)
-    {
-      rpl_filter= thd->system_thread_info.rpl_sql_info->rpl_filter;
-      if (!rpl_filter->db_ok(lex->name.str) ||
-          !rpl_filter->db_ok_with_wild_table(lex->name.str))
-      {
-        my_message(ER_SLAVE_IGNORED_TABLE, ER_THD(thd, ER_SLAVE_IGNORED_TABLE), MYF(0));
-        break;
-      }
-    }
-#endif
-    if (check_access(thd, lex->create_info.or_replace() ?
-                          (CREATE_ACL | DROP_ACL) : CREATE_ACL,
-                     lex->name.str, NULL, NULL, 1, 0))
+    if (mysql_create_db_prepare(thd, &lex->name))
       break;
     WSREP_TO_ISOLATION_BEGIN(lex->name.str, NULL, NULL)
     res= mysql_create_db(thd, lex->name.str,
                          lex->create_info, &lex->create_info);
     break;
   }
+  case SQLCOM_CREATE_PACKAGE_BODY:
+  {
+    if (mysql_create_package_body(thd, thd->lex->package_body))
+      goto error;
+    my_ok(thd);
+    break;
+  }
   case SQLCOM_DROP_DB:
   {
-    if (check_db_name(&lex->name))
-    {
-      my_error(ER_WRONG_DB_NAME, MYF(0), lex->name.str);
-      break;
-    }
-    /*
-      If in a slave thread :
-      DROP DATABASE DB may not be preceded by USE DB.
-      For that reason, maybe db_ok() in sql/slave.cc did not check the 
-      do_db/ignore_db. And as this query involves no tables, tables_ok()
-      above was not called. So we have to check rules again here.
-    */
-#ifdef HAVE_REPLICATION
-    if (thd->slave_thread)
-    {
-      rpl_filter= thd->system_thread_info.rpl_sql_info->rpl_filter;
-      if (!rpl_filter->db_ok(lex->name.str) ||
-          !rpl_filter->db_ok_with_wild_table(lex->name.str))
-      {
-        my_message(ER_SLAVE_IGNORED_TABLE, ER_THD(thd, ER_SLAVE_IGNORED_TABLE), MYF(0));
-        break;
-      }
-    }
-#endif
-    if (check_access(thd, DROP_ACL, lex->name.str, NULL, NULL, 1, 0))
+    if (mysql_drop_db_prepare(thd, &lex->name))
       break;
     WSREP_TO_ISOLATION_BEGIN(lex->name.str, NULL, NULL)
     res= mysql_rm_db(thd, lex->name.str, lex->if_exists());
+    break;
+  }
+  case SQLCOM_DROP_PACKAGE:
+  {
+    if (mysql_drop_db_prepare(thd, &lex->name))
+      break;
+    WSREP_TO_ISOLATION_BEGIN(lex->name.str, NULL, NULL)
+    res= mysql_drop_package(thd, lex->name.str, lex->if_exists());
+    break;
+  }
+  case SQLCOM_DROP_PACKAGE_BODY:
+  {
+    if (mysql_drop_db_prepare(thd, &lex->name))
+      break;
+    WSREP_TO_ISOLATION_BEGIN(lex->name.str, NULL, NULL)
+    res= mysql_drop_package_body(thd, lex->name.str, lex->if_exists());
     break;
   }
   case SQLCOM_ALTER_DB_UPGRADE:
