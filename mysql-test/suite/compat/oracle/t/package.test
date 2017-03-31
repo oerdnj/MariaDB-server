@@ -6,7 +6,7 @@ SET sql_mode=ORACLE;
 --echo # Creating a body of a non-existing package
 --echo #
 DELIMITER $$;
---error ER_BAD_DB_ERROR
+--error ER_UNKNOWN_ERROR
 CREATE PACKAGE BODY test2 AS
   FUNCTION f1 RETURN INT AS BEGIN RETURN 10; END;
 END;
@@ -75,39 +75,39 @@ SET SESSION TRANSACTION READ WRITE;
 --echo # DROP PACKAGE and DROP PACKAGE BODY works only on empty databases
 --echo #
 
-CREATE DATABASE test2;
-CREATE TABLE test2.t1 (a INT);
+CREATE DATABASE test_test2;
+CREATE TABLE test_test2.t1 (a INT);
 --error ER_UNKNOWN_ERROR
 DROP PACKAGE BODY test2;
 --error ER_UNKNOWN_ERROR
 DROP PACKAGE test2;
-DROP DATABASE test2;
+DROP DATABASE test_test2;
 
-CREATE DATABASE test2;
-CREATE TABLE test2.t1 (a INT);
+CREATE DATABASE test_test2;
+CREATE TABLE test_test2.t1 (a INT);
 --error ER_UNKNOWN_ERROR
 DROP PACKAGE BODY test2;
 --error ER_UNKNOWN_ERROR
 DROP PACKAGE test2;
-DROP TABLE test2.t1;
+DROP TABLE test_test2.t1;
 DROP PACKAGE BODY test2;
 DROP PACKAGE test2;
 
-CREATE DATABASE test2;
-CREATE VIEW test2.v1 AS SELECT 1 AS a;
+CREATE DATABASE test_test2;
+CREATE VIEW test_test2.v1 AS SELECT 1 AS a;
 --error ER_UNKNOWN_ERROR
 DROP PACKAGE BODY test2;
 --error ER_UNKNOWN_ERROR
 DROP PACKAGE test2;
-DROP DATABASE test2;
+DROP DATABASE test_test2;
 
-CREATE DATABASE test2;
-CREATE VIEW test2.v1 AS SELECT 1 AS a;
+CREATE DATABASE test_test2;
+CREATE VIEW test_test2.v1 AS SELECT 1 AS a;
 --error ER_UNKNOWN_ERROR
 DROP PACKAGE BODY test2;
 --error ER_UNKNOWN_ERROR
 DROP PACKAGE test2;
-DROP VIEW test2.v1;
+DROP VIEW test_test2.v1;
 DROP PACKAGE BODY test2;
 DROP PACKAGE test2;
 
@@ -233,6 +233,28 @@ DROP PACKAGE BODY test2;
 
 
 DROP PACKAGE test2;
+
+--echo #
+--echo # Package routines accessing tables
+--echo #
+CREATE TABLE t1 (a INT);
+DELIMITER $$;
+CREATE PACKAGE test2 AS
+  PROCEDURE p1(a INT);
+END;
+$$
+CREATE PACKAGE BODY test2 AS
+  PROCEDURE p1(a INT) AS
+  BEGIN
+    INSERT INTO t1 VALUES (10);
+  END;
+END;
+$$
+DELIMITER ;$$
+CALL test2.p1(10);
+SELECT * FROM t1;
+DROP PACKAGE test2;
+DROP TABLE t1;
 
 
 --echo #

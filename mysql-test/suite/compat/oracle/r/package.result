@@ -6,17 +6,17 @@ CREATE PACKAGE BODY test2 AS
 FUNCTION f1 RETURN INT AS BEGIN RETURN 10; END;
 END;
 $$
-ERROR 42000: Unknown database 'test2'
+ERROR HY000: Unknown package 'test.test2'
 #
 # Dropping a non-existing package
 #
 DROP PACKAGE test2;
-ERROR HY000: Unknown package 'test2'
+ERROR HY000: Unknown package 'test.test2'
 DROP PACKAGE IF EXISTS test2;
 Warnings:
-Note	1105	Unknown package 'test2'
+Note	1105	Unknown package 'test.test2'
 DROP PACKAGE BODY test2;
-ERROR HY000: Unknown package 'test2'
+ERROR HY000: Unknown package 'test.test2'
 #
 # PACKAGE and PS
 #
@@ -54,36 +54,36 @@ SET SESSION TRANSACTION READ WRITE;
 #
 # DROP PACKAGE and DROP PACKAGE BODY works only on empty databases
 #
-CREATE DATABASE test2;
-CREATE TABLE test2.t1 (a INT);
+CREATE DATABASE test_test2;
+CREATE TABLE test_test2.t1 (a INT);
 DROP PACKAGE BODY test2;
-ERROR HY000: Database test2 has some files. Use DROP DATABASE to drop it.
+ERROR HY000: Database test_test2 has some files. Use DROP DATABASE to drop it.
 DROP PACKAGE test2;
-ERROR HY000: Database test2 has some files. Use DROP DATABASE to drop it.
-DROP DATABASE test2;
-CREATE DATABASE test2;
-CREATE TABLE test2.t1 (a INT);
+ERROR HY000: Database test_test2 has some files. Use DROP DATABASE to drop it.
+DROP DATABASE test_test2;
+CREATE DATABASE test_test2;
+CREATE TABLE test_test2.t1 (a INT);
 DROP PACKAGE BODY test2;
-ERROR HY000: Database test2 has some files. Use DROP DATABASE to drop it.
+ERROR HY000: Database test_test2 has some files. Use DROP DATABASE to drop it.
 DROP PACKAGE test2;
-ERROR HY000: Database test2 has some files. Use DROP DATABASE to drop it.
-DROP TABLE test2.t1;
+ERROR HY000: Database test_test2 has some files. Use DROP DATABASE to drop it.
+DROP TABLE test_test2.t1;
 DROP PACKAGE BODY test2;
 DROP PACKAGE test2;
-CREATE DATABASE test2;
-CREATE VIEW test2.v1 AS SELECT 1 AS a;
+CREATE DATABASE test_test2;
+CREATE VIEW test_test2.v1 AS SELECT 1 AS a;
 DROP PACKAGE BODY test2;
-ERROR HY000: Database test2 has some files. Use DROP DATABASE to drop it.
+ERROR HY000: Database test_test2 has some files. Use DROP DATABASE to drop it.
 DROP PACKAGE test2;
-ERROR HY000: Database test2 has some files. Use DROP DATABASE to drop it.
-DROP DATABASE test2;
-CREATE DATABASE test2;
-CREATE VIEW test2.v1 AS SELECT 1 AS a;
+ERROR HY000: Database test_test2 has some files. Use DROP DATABASE to drop it.
+DROP DATABASE test_test2;
+CREATE DATABASE test_test2;
+CREATE VIEW test_test2.v1 AS SELECT 1 AS a;
 DROP PACKAGE BODY test2;
-ERROR HY000: Database test2 has some files. Use DROP DATABASE to drop it.
+ERROR HY000: Database test_test2 has some files. Use DROP DATABASE to drop it.
 DROP PACKAGE test2;
-ERROR HY000: Database test2 has some files. Use DROP DATABASE to drop it.
-DROP VIEW test2.v1;
+ERROR HY000: Database test_test2 has some files. Use DROP DATABASE to drop it.
+DROP VIEW test_test2.v1;
 DROP PACKAGE BODY test2;
 DROP PACKAGE test2;
 #
@@ -151,7 +151,7 @@ FUNCTION f1 RETURN INT;
 END test2
 $$
 Warnings:
-Note	1007	Can't create database 'test2'; database exists
+Note	1007	Can't create database 'test_test2'; database exists
 CREATE PACKAGE BODY test2 AS
 FUNCTION f1 RETURN INT AS BEGIN RETURN 10; END;
 FUNCTION f2 RETURN INT AS BEGIN RETURN f1(); END;
@@ -172,17 +172,38 @@ f2()
 10
 DROP PACKAGE BODY test2;
 SELECT test2.f1();
-ERROR 42000: FUNCTION test2.f1 does not exist
+ERROR 42000: FUNCTION test.test2.f1 does not exist
 SELECT test2.f2();
-ERROR 42000: FUNCTION test2.f2 does not exist
+ERROR 42000: FUNCTION test.test2.f2 does not exist
 CALL test2.p1();
-ERROR 42000: PROCEDURE test2.p1 does not exist
+ERROR 42000: PROCEDURE test.test2.p1 does not exist
 DROP PACKAGE BODY IF EXISTS test2;
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'IF EXISTS test2' at line 1
 # "DROP PACKAGE BODY" now does sp_drop_db_routines.
 # So dropping a body which was already dropped before returns no errors.
 DROP PACKAGE BODY test2;
 DROP PACKAGE test2;
+#
+# Package routines accessing tables
+#
+CREATE TABLE t1 (a INT);
+CREATE PACKAGE test2 AS
+PROCEDURE p1(a INT);
+END;
+$$
+CREATE PACKAGE BODY test2 AS
+PROCEDURE p1(a INT) AS
+BEGIN
+INSERT INTO t1 VALUES (10);
+END;
+END;
+$$
+CALL test2.p1(10);
+SELECT * FROM t1;
+a
+10
+DROP PACKAGE test2;
+DROP TABLE t1;
 #
 # CREATA PACKAGE: Optional package name after the "END" keyword
 #

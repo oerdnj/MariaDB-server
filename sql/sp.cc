@@ -1587,7 +1587,7 @@ bool lock_db_routines(THD *thd, char *db)
 */
 
 int
-sp_drop_db_routines(THD *thd, char *db)
+sp_drop_db_routines(THD *thd, char *db, const char *prefix)
 {
   TABLE *table;
   int ret;
@@ -1619,13 +1619,24 @@ sp_drop_db_routines(THD *thd, char *db)
 
     do
     {
-      if (! table->file->ha_delete_row(table->record[0]))
-	deleted= TRUE;		/* We deleted something */
-      else
+      bool skip= false;
+      if (prefix)
       {
-	ret= SP_DELETE_ROW_FAILED;
-	nxtres= 0;
-	break;
+        Field *field= table->field[MYSQL_PROC_FIELD_NAME];
+        String tmp1, tmp2, *res= field->val_str(&tmp1, &tmp2);
+        size_t length= strlen(prefix);
+        skip= res->length() < length || memcmp(res->ptr(), prefix, length);
+      }
+      if (!skip)
+      {
+        if (! table->file->ha_delete_row(table->record[0]))
+          deleted= TRUE;                /* We deleted something */
+        else
+        {
+          ret= SP_DELETE_ROW_FAILED;
+          nxtres= 0;
+          break;
+        }
       }
     } while (!(nxtres= table->file->ha_index_next_same(table->record[0],
                                                        keybuf, key_len)));
@@ -1932,6 +1943,19 @@ bool sp_add_used_routine(Query_tables_list *prelocking_ctx, Query_arena *arena,
 }
 
 
+static bool
+rewrite_spname_if_known_package(THD *thd, sp_name *name,
+                                LEX_STRING &package,
+                                LEX_STRING &routine)
+{
+  Schema_specification_st db_info;
+  Package_dbname pdb(thd, package);
+  if (!load_db_opt_by_name(thd, pdb.str, &db_info))
+    return sp_make_package_routine_spname(thd, name, package, routine);
+  return false;
+}
+
+
 /**
   Add routine which is explicitly used by statement to the set of stored
   routines used by this statement.
@@ -1953,6 +1977,44 @@ bool sp_add_used_routine(Query_tables_list *prelocking_ctx, Query_arena *arena,
 void sp_add_used_routine(Query_tables_list *prelocking_ctx, Query_arena *arena,
                          const sp_name *rt, enum stored_procedure_type rt_type)
 {
+  THD *thd= current_thd;
+  char *end;
+
+  if (thd->db && (thd->variables.sql_mode & MODE_ORACLE))
+  {
+    if (rt->m_explicit_name)
+    {
+      /*
+        If a qualified routine name was used, e.g. xxx.yyy(),
+        we possibly have a call to a package routine.
+        Rewrite rt if rt->m_db is a known package.
+      */
+      if (rewrite_spname_if_known_package(thd, rt, rt->m_db, rt->m_name))
+        return;
+    }
+    else if (thd->lex->sphead &&
+             thd->lex->sphead->m_name.length && // Not an anonymous block
+             (end= strchr(thd->lex->sphead->m_name.str, '.')))
+    {
+      char tmpbuf[SAFE_NAME_LEN];
+      LEX_STRING tmp;
+      /*
+        If a non-qualified routine was used, e.g. yyy(),
+        we possibly have a call from a package routine to another
+        routine of the same package.
+        The test above checks if the current routine name has a dot character.
+        Now lets cut the left part before the dot character.
+      */
+      tmp.length= my_snprintf(tmpbuf, sizeof(tmpbuf), "%.*s",
+                              end - thd->lex->sphead->m_name.str,
+                              thd->lex->sphead->m_name.str);
+      tmp.str= tmpbuf;
+      // Rewrite rt if tmp is a known package
+      if (rewrite_spname_if_known_package(thd, rt, tmp, rt->m_name))
+        return;
+    }
+  }
+
   MDL_key key((rt_type == TYPE_ENUM_FUNCTION) ? MDL_key::FUNCTION :
                                                 MDL_key::PROCEDURE,
               rt->m_db.str, rt->m_name.str);
@@ -2343,3 +2405,34 @@ sp_load_for_information_schema(THD *thd, TABLE *proc_table, String *db,
   return sp;
 }
 
+
+bool sp_make_package_routine_name(THD *thd, LEX_STRING *dst,
+                                  const LEX_STRING &pkg,
+                                  const LEX_STRING &name)
+{
+  char *tmp;
+  size_t length= pkg.length + 1 + name.length + 1;
+  if (!(tmp= (char *) thd->alloc(length)))
+    return true;
+  dst->length= my_snprintf(tmp, length, "%.*s.%.*s",
+                           (int) pkg.length, pkg.str,
+                           (int) name.length, name.str);
+  dst->str= tmp;
+  return false;
+}
+
+
+/*
+  dst->m_db is initialized from thd->db.
+  dst->m_name is initialized to a mixture of pkg and name.
+*/
+bool sp_make_package_routine_spname(THD *thd, sp_name *dst,
+                                    const LEX_STRING &pkg,
+                                    const LEX_STRING &name)
+{
+  if (sp_make_package_routine_name(thd, &dst->m_name, pkg, name))
+    return true;
+  dst->m_db.str= thd->strmake(thd->db, thd->db_length);
+  dst->m_db.length= thd->db_length;
+  return false;
+}

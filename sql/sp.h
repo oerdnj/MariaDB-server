@@ -107,7 +107,7 @@ enum
 
 /* Drop all routines in database 'db' */
 int
-sp_drop_db_routines(THD *thd, char *db);
+sp_drop_db_routines(THD *thd, char *db, const char *prefix= NULL);
 
 /**
    Acquires exclusive metadata lock on all stored routines in the
@@ -149,6 +149,15 @@ sp_update_routine(THD *thd, stored_procedure_type type, const sp_name *name,
 
 int
 sp_drop_routine(THD *thd, stored_procedure_type type, const sp_name *name);
+
+
+bool sp_make_package_routine_name(THD *thd, LEX_STRING *dst,
+                                  const LEX_STRING &pkg,
+                                  const LEX_STRING &name);
+
+bool sp_make_package_routine_spname(THD *thd, sp_name *dst,
+                                    const LEX_STRING &pkg,
+                                    const LEX_STRING &name);
 
 
 /**

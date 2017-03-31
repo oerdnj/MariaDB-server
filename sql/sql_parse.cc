@@ -3026,18 +3026,74 @@ error: /* Used by WSREP_TO_ISOLATION_BEGIN */
 }
 
 
+static void report_unknown_package(THD *thd,
+                                   const char *db,
+                                   const char *package,
+                                   bool if_exists)
+{
+  if (!if_exists)
+  {
+    my_printf_error(ER_UNKNOWN_ERROR,
+                    "Unknown package '%-.192s.%-.192s'", MYF(0), db, package);
+  }
+  else
+  {
+    push_warning_printf(thd, Sql_condition::WARN_LEVEL_NOTE,
+                        ER_UNKNOWN_ERROR,
+                        "Unknown package '%-.192s.%-.192s'", db, package);
+  }
+}
+
+
+/**
+  Check if the package with name "package" exists in the database "db".
+  @param - pdb       - the package pseudo database name previously constructed
+                       using "db" and "package"
+  @param - db        - the database name
+  @param - package   - the package name
+  @param - if_exists - tells of "IF EXISTS" clause was specified.
+
+  @returns false   - on success (the package exists)
+  @returns true    - on error (the package does not exists)
+
+  In case if the database does not exists, an error or a warning
+  is issued, depending on the "if_exists" parameter.
+*/
+static bool check_package_exists(THD *thd,
+                                 const Package_dbname &pdb,
+                                 const char *db,
+                                 const char *package,
+                                 bool if_exists)
+{
+  Schema_specification_st db_info;
+  if (!load_db_opt_by_name(thd, pdb.str, &db_info))
+    return false;
+  report_unknown_package(thd, db, package, if_exists);
+  return true;
+}
+
+
 static int mysql_create_package_body(THD *thd, Package_body *package)
 {
   List_iterator<LEX> it(package->m_lex_list);
   LEX *oldlex= thd->lex;
   int rc= 0;
+  Package_dbname pdb(thd, oldlex->name);
+
+  if (!thd->db)
+  {
+    my_error(ER_NO_DB_ERROR, MYF(0));
+    return 1;
+  }
+  if (check_package_exists(thd, pdb, thd->db, oldlex->name.str, false))
+    return 1;
   for (LEX *lex; (lex= it++); )
   {
     thd->lex= lex;
     thd->lex->definer= oldlex->definer;
-    // Copy the package name as the database name
-    thd->lex->spname->m_db= oldlex->name;
-    thd->lex->sphead->m_db= oldlex->name;
+    sp_make_package_routine_name(thd, &thd->lex->spname->m_name,
+                                 oldlex->name, thd->lex->spname->m_name);
+    thd->lex->sphead->m_name= thd->lex->spname->m_name;
     if ((rc= mysql_create_routine(thd, lex)))
       break;
   }
@@ -3062,28 +3118,19 @@ static int mysql_create_package_body(THD *thd, Package_body *package)
   @retval 1         - ERROR: the database directory does not exists
   @retval -1        - ERROR: not a package (this is a real database,
 */
-static int check_drop_package(THD *thd, char *db, bool if_exists)
+static int check_drop_package(THD *thd,
+                              const Package_dbname &pdb,
+                              const char *db,
+                              const char *package,
+                              bool if_exists)
 {
   int rc= 0;
   MY_DIR *dirp;
   char path[FN_REFLEN + 16];
-  char db_tmp[SAFE_NAME_LEN];
-  char *dbnorm= normalize_db_name(db, db_tmp, sizeof(db_tmp));
-  build_table_filename(path, sizeof(path) - 1, dbnorm, "", "", 0);
+  build_table_filename(path, sizeof(path) - 1, pdb.str, "", "", 0);
   if (!(dirp= my_dir(path, MY_THREAD_SPECIFIC)))
   {
-    if (!if_exists)
-    {
-      my_printf_error(ER_UNKNOWN_ERROR,
-                      "Unknown package '%-.192s'", MYF(0), db);
-    }
-    else
-    {
-      push_warning_printf(thd, Sql_condition::WARN_LEVEL_NOTE,
-                          ER_UNKNOWN_ERROR,
-                          "Unknown package '%-.192s'", db);
-      my_ok(thd);
-    }
+    report_unknown_package(thd, db, package, if_exists);
     return 1;
   }
   else
@@ -3094,7 +3141,7 @@ static int check_drop_package(THD *thd, char *db, bool if_exists)
       if (strcmp(file->name, MY_DB_OPT_FILE))
       {
         my_printf_error(ER_UNKNOWN_ERROR, "Database %s has some files. "
-                        "Use DROP DATABASE to drop it.", MYF(0), db);
+                        "Use DROP DATABASE to drop it.", MYF(0), pdb.str);
 
         rc= -1;
         break;
@@ -3106,29 +3153,54 @@ static int check_drop_package(THD *thd, char *db, bool if_exists)
 }
 
 
-static bool mysql_drop_package(THD *thd, char *db, bool if_exists)
+static bool mysql_drop_package_body_internal(THD *thd, char *db, char *package)
 {
-  int rc= check_drop_package(thd, db, if_exists);
-  if (rc > 0)
-    return !if_exists; // The database does not exist
-  if (rc < 0)
-    return true;       // The database exists, but it's not a package.
-  // The database exists and looks like a package
-  return mysql_rm_db(thd, db, if_exists);
+  char db_tmp[SAFE_NAME_LEN];
+  char *dbnorm= normalize_db_name(db, db_tmp, sizeof(db_tmp));
+  char pattern[128];
+  my_snprintf(pattern, sizeof(pattern), "%s.", package);
+  return sp_drop_db_routines(thd, dbnorm, pattern);
 }
 
 
-static bool mysql_drop_package_body(THD *thd, char *db, bool if_exists)
+static bool mysql_drop_package(THD *thd,
+                               const Package_dbname &pdb,
+                               char *db, char *package,
+                               bool if_exists)
 {
-  int rc= check_drop_package(thd, db, if_exists);
+
+  int rc= check_drop_package(thd, pdb, db, package, if_exists);
   if (rc > 0)          // The database does not exist
+  {
+    if (if_exists)
+      my_ok(thd);
     return !if_exists;
+  }
   if (rc < 0)
     return true;       // The database exists, but it's not a package.
   // The database exists and looks like a package
-  char db_tmp[SAFE_NAME_LEN];
-  char *dbnorm= normalize_db_name(db, db_tmp, sizeof(db_tmp));
-  if (sp_drop_db_routines(thd, dbnorm))
+  return
+    mysql_drop_package_body_internal(thd, db, package) ||
+    mysql_rm_db(thd, pdb.str, if_exists);
+}
+
+
+static bool mysql_drop_package_body(THD *thd,
+                                    const Package_dbname &pdb,
+                                    char *db, char *package,
+                                    bool if_exists)
+{
+  int rc= check_drop_package(thd, pdb, db, package, if_exists);
+  if (rc > 0)          // The database does not exist
+  {
+    if (if_exists)
+      my_ok(thd);
+    return !if_exists;
+  }
+  if (rc < 0)
+    return true;       // The database exists, but it's not a package.
+  // The database exists and looks like a package
+  if (mysql_drop_package_body_internal(thd, db, package))
     return true;
   my_ok(thd);
   return false;
@@ -5184,6 +5256,19 @@ end_with_restore_list:
     }
     break;
   case SQLCOM_CREATE_PACKAGE:
+  {
+    if (!thd->db)
+    {
+      my_error(ER_NO_DB_ERROR, MYF(0));
+      goto error;
+    }
+    Package_dbname pdb(thd, lex->name);
+    if (mysql_create_db_prepare(thd, &pdb))
+      break;
+    WSREP_TO_ISOLATION_BEGIN(pdb.str, NULL, NULL)
+    res= mysql_create_db(thd, pdb.str, lex->create_info, &lex->create_info);
+    break;   
+  }
   case SQLCOM_CREATE_DB:
   {
     if (mysql_create_db_prepare(thd, &lex->name))
@@ -5210,18 +5295,30 @@ end_with_restore_list:
   }
   case SQLCOM_DROP_PACKAGE:
   {
-    if (mysql_drop_db_prepare(thd, &lex->name))
+    if (!thd->db)
+    {
+      my_error(ER_NO_DB_ERROR, MYF(0));
+      goto error;
+    }
+    Package_dbname pdb(thd, lex->name);
+    if (mysql_drop_db_prepare(thd, &pdb))
       break;
-    WSREP_TO_ISOLATION_BEGIN(lex->name.str, NULL, NULL)
-    res= mysql_drop_package(thd, lex->name.str, lex->if_exists());
+    WSREP_TO_ISOLATION_BEGIN(pdb.str, NULL, NULL)
+    res= mysql_drop_package(thd, pdb, thd->db, lex->name.str, lex->if_exists());
     break;
   }
   case SQLCOM_DROP_PACKAGE_BODY:
   {
-    if (mysql_drop_db_prepare(thd, &lex->name))
+    if (!thd->db)
+    {
+      my_error(ER_NO_DB_ERROR, MYF(0));
+      goto error;
+    }
+    Package_dbname pdb(thd, lex->name);
+    if (mysql_drop_db_prepare(thd, &pdb))
       break;
-    WSREP_TO_ISOLATION_BEGIN(lex->name.str, NULL, NULL)
-    res= mysql_drop_package_body(thd, lex->name.str, lex->if_exists());
+    WSREP_TO_ISOLATION_BEGIN(pdb.str, NULL, NULL)
+    res= mysql_drop_package_body(thd, pdb, thd->db, lex->name.str, lex->if_exists());
     break;
   }
   case SQLCOM_ALTER_DB_UPGRADE:
