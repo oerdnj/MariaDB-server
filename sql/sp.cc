@@ -1950,8 +1950,47 @@ rewrite_spname_if_known_package(THD *thd, sp_name *name,
 {
   Schema_specification_st db_info;
   Package_dbname pdb(thd, package);
-  if (!load_db_opt_by_name(thd, pdb.str, &db_info))
-    return sp_make_package_routine_spname(thd, name, package, routine);
+  if (load_db_opt_by_name(thd, pdb.str, &db_info))
+    return false; // The package with name "package" does not exist
+  return sp_make_package_routine_spname(thd, name, package, routine);
+}
+
+
+static bool
+check_if_known_routine(THD *thd, sp_name *name, enum stored_procedure_type type)
+{
+  bool rc;
+  sql_mode_t saved_mode= thd->variables.sql_mode;
+  Open_tables_backup open_tables_state_backup;
+  TABLE *table;
+  if (!(table= open_proc_table_for_read(thd, &open_tables_state_backup)))
+    return false;
+  thd->variables.sql_mode= 0;
+  rc= db_find_routine_aux(thd, type, name, table) == SP_OK;
+  thd->variables.sql_mode= saved_mode;
+  close_system_tables(thd, &open_tables_state_backup);
+  return rc;
+}
+
+
+static bool
+rewrite_spname_if_known_package_routine(THD *thd, sp_name *name,
+                                        enum stored_procedure_type type,
+                                        LEX_STRING &package,
+                                        LEX_STRING &routine)
+{
+  Schema_specification_st db_info;
+  Package_dbname pdb(thd, package);
+  sp_name tmp(null_lex_str, null_lex_str, false);
+
+  if (load_db_opt_by_name(thd, pdb.str, &db_info))
+    return false; // The package with name "package" does not exist
+
+  if (sp_make_package_routine_spname(thd, &tmp, package, routine))
+    return true;
+
+  if (check_if_known_routine(thd, &tmp, type))
+    *name= tmp;
   return false;
 }
 
@@ -2009,8 +2048,8 @@ void sp_add_used_routine(Query_tables_list *prelocking_ctx, Query_arena *arena,
                               end - thd->lex->sphead->m_name.str,
                               thd->lex->sphead->m_name.str);
       tmp.str= tmpbuf;
-      // Rewrite rt if tmp is a known package
-      if (rewrite_spname_if_known_package(thd, rt, tmp, rt->m_name))
+      if (rewrite_spname_if_known_package_routine(thd, rt, rt_type,
+                                                  tmp, rt->m_name))
         return;
     }
   }
