@@ -6,7 +6,7 @@ SET sql_mode=ORACLE;
 --echo # Creating a body of a non-existing package
 --echo #
 DELIMITER $$;
---error ER_UNKNOWN_ERROR
+--error ER_SP_DOES_NOT_EXIST
 CREATE PACKAGE BODY test2 AS
   FUNCTION f1 RETURN INT AS BEGIN RETURN 10; END;
 END;
@@ -16,10 +16,10 @@ DELIMITER ;$$
 --echo #
 --echo # Dropping a non-existing package
 --echo #
---error ER_UNKNOWN_ERROR
+--error ER_SP_DOES_NOT_EXIST
 DROP PACKAGE test2;
 DROP PACKAGE IF EXISTS test2;
---error ER_UNKNOWN_ERROR
+--error ER_SP_DOES_NOT_EXIST
 DROP PACKAGE BODY test2;
 
 
@@ -71,45 +71,45 @@ DROP PACKAGE BODY test2;
 SET SESSION TRANSACTION READ WRITE;
 
 
---echo #
---echo # DROP PACKAGE and DROP PACKAGE BODY works only on empty databases
---echo #
-
-CREATE DATABASE test_test2;
-CREATE TABLE test_test2.t1 (a INT);
---error ER_UNKNOWN_ERROR
-DROP PACKAGE BODY test2;
---error ER_UNKNOWN_ERROR
-DROP PACKAGE test2;
-DROP DATABASE test_test2;
-
-CREATE DATABASE test_test2;
-CREATE TABLE test_test2.t1 (a INT);
---error ER_UNKNOWN_ERROR
-DROP PACKAGE BODY test2;
---error ER_UNKNOWN_ERROR
-DROP PACKAGE test2;
-DROP TABLE test_test2.t1;
-DROP PACKAGE BODY test2;
-DROP PACKAGE test2;
-
-CREATE DATABASE test_test2;
-CREATE VIEW test_test2.v1 AS SELECT 1 AS a;
---error ER_UNKNOWN_ERROR
-DROP PACKAGE BODY test2;
---error ER_UNKNOWN_ERROR
-DROP PACKAGE test2;
-DROP DATABASE test_test2;
-
-CREATE DATABASE test_test2;
-CREATE VIEW test_test2.v1 AS SELECT 1 AS a;
---error ER_UNKNOWN_ERROR
-DROP PACKAGE BODY test2;
---error ER_UNKNOWN_ERROR
-DROP PACKAGE test2;
-DROP VIEW test_test2.v1;
-DROP PACKAGE BODY test2;
-DROP PACKAGE test2;
+#--echo #
+#--echo # DROP PACKAGE and DROP PACKAGE BODY works only on empty databases
+#--echo #
+#
+#CREATE DATABASE test_test2;
+#CREATE TABLE test_test2.t1 (a INT);
+#--error ER_UNKNOWN_ERROR
+#DROP PACKAGE BODY test2;
+#--error ER_SP_DOES_NOT_EXIST
+#DROP PACKAGE test2;
+#DROP DATABASE test_test2;
+#
+#CREATE DATABASE test_test2;
+#CREATE TABLE test_test2.t1 (a INT);
+#--error ER_UNKNOWN_ERROR
+#DROP PACKAGE BODY test2;
+#--error ER_SP_DOES_NOT_EXIST
+#DROP PACKAGE test2;
+#DROP TABLE test_test2.t1;
+#DROP PACKAGE BODY test2;
+#DROP PACKAGE test2;
+#
+#CREATE DATABASE test_test2;
+#CREATE VIEW test_test2.v1 AS SELECT 1 AS a;
+#--error ER_UNKNOWN_ERROR
+#DROP PACKAGE BODY test2;
+#--error ER_UNKNOWN_ERROR
+#DROP PACKAGE test2;
+#DROP DATABASE test_test2;
+#
+#CREATE DATABASE test_test2;
+#CREATE VIEW test_test2.v1 AS SELECT 1 AS a;
+#--error ER_UNKNOWN_ERROR
+#DROP PACKAGE BODY test2;
+#--error ER_UNKNOWN_ERROR
+#DROP PACKAGE test2;
+#DROP VIEW test_test2.v1;
+#DROP PACKAGE BODY test2;
+#DROP PACKAGE test2;
 
 
 --echo #
@@ -184,13 +184,20 @@ DELIMITER ;$$
 DELIMITER $$;
 CREATE PACKAGE test2 AS
   FUNCTION f1 RETURN INT DETERMINISTIC;
-  FUNCTION f2 RETURN INT;
+  FUNCTION f2(a INT) RETURN INT;
   FUNCTION concat RETURN INT;
   PROCEDURE p1;
+  PROCEDURE p2(a INT);
 END
 $$
 DELIMITER ;$$
 
+--vertical_results
+--replace_column 13 # 14 #
+SELECT * FROM mysql.proc WHERE db='test' AND name='test2';
+--replace_column 24 # 25 #
+SELECT * FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_SCHEMA='test' AND ROUTINE_NAME='test2';
+--horizontal_results
 
 DELIMITER $$;
 CREATE PACKAGE IF NOT EXISTS test2 AS
@@ -203,17 +210,29 @@ DELIMITER ;$$
 DELIMITER $$;
 CREATE PACKAGE BODY test2 AS
   FUNCTION f1 RETURN INT AS BEGIN RETURN 10; END;
-  FUNCTION f2 RETURN INT AS BEGIN RETURN f1(); END;
+  FUNCTION f2(a INT) RETURN INT AS BEGIN RETURN f1()+a; END;
   PROCEDURE p1 AS
   BEGIN
-    SELECT f2();
+    SELECT f2(0);
+  END;
+  PROCEDURE p2(a INT) AS
+  BEGIN
+    SELECT f2(a);
   END;
 END;
 $$
 DELIMITER ;$$
 SELECT test2.f1();
-SELECT test2.f2();
+SELECT test2.f2(1);
 CALL test2.p1();
+CALL test2.p2(1);
+
+--vertical_results
+--replace_column 13 # 14 #
+SELECT * FROM mysql.proc WHERE db='test' AND name LIKE 'test2.%';
+--replace_column 24 # 25 #
+SELECT * FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_SCHEMA='test' AND ROUTINE_NAME LIKE 'test2.%';
+--horizontal_results
 
 DROP PACKAGE BODY test2;
 --error ER_SP_DOES_NOT_EXIST

@@ -1110,6 +1110,16 @@ public:
   char *db;
   size_t db_length;
 
+  /*
+    We should eventually replace "db" and "db_length" to LEX_STRING.
+    This helper method can be removed after that.
+  */
+  LEX_STRING db_lex_string() const
+  {
+    LEX_STRING tmp= {db, db_length };
+    return tmp;
+  }
+
   /* This is set to 1 of last call to send_result_to_client() was ok */
   my_bool query_cache_is_applicable;
 
@@ -5964,6 +5974,34 @@ public:
             dot, ".",
             (int) m_name.length, m_name.str);
     DBUG_ASSERT(ok_for_lower_case_names(m_db.str));
+    return false;
+  }
+
+  bool make_package_routine_name(THD *thd,
+                                 const LEX_STRING &package,
+                                 const LEX_STRING &routine)
+  {
+    char *tmp;
+    size_t length= package.length + 1 + routine.length + 1;
+    if (!(tmp= (char *) thd->alloc(length)))
+      return true;
+    m_name.length= my_snprintf(tmp, length, "%.*s.%.*s",
+                               (int) package.length, package.str,
+                               (int) routine.length, routine.str);
+    m_name.str= tmp;
+    return false;
+  }
+
+  bool make_package_routine_name(THD *thd,
+                                 const LEX_STRING &db,
+                                 const LEX_STRING &package,
+                                 const LEX_STRING &routine)
+  {
+    if (make_package_routine_name(thd, package, routine))
+      return true;
+    if (!(m_db.str= thd->strmake(db.str, db.length)))
+      return true;
+    m_db.length= db.length;
     return false;
   }
 };

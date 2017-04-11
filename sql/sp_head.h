@@ -107,27 +107,6 @@ protected:
 
 /*************************************************************************/
 
-/**
-  Pseudo-database name for Oracle-style packages.
-*/
-class Package_dbname: public LEX_STRING
-{
-  char buf[SAFE_NAME_LEN];
-public:
-  Package_dbname(THD *thd, const LEX_STRING &name)
-  {
-    DBUG_ASSERT(thd->db);
-    LEX_STRING::length= my_snprintf(buf, sizeof(buf), "%.*s_%.*s",
-                                   (int) thd->db_length, thd->db,
-                                   (int) name.length, name.str);
-    LEX_STRING::str= buf;
-    if (lower_case_table_names)
-      my_casedn_str(system_charset_info, buf);
-  }
-};
-
-/*************************************************************************/
-
 class sp_name : public Sql_alloc,
                 public Database_qualified_name
 {
