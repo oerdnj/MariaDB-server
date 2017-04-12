@@ -2067,7 +2067,7 @@ create:
             if (!(lex->package_body= new (thd->mem_root) Package_body(lex)))
               MYSQL_YYABORT;
           }
-          package_declaration_element_list END opt_package_name
+          opt_package_declaration_element_list END opt_package_name
           {
             if ($9.str && strcmp($9.str, $4.str))
               my_yyabort_error((ER_END_IDENTIFIER_DOES_NOT_MATCH, MYF(0),
@@ -2122,6 +2122,11 @@ package_implementation_element_routine:
         | sp_tail_package ';'
         ;
 
+
+opt_package_declaration_element_list:
+          /* Empty */
+        | package_declaration_element_list
+        ;
 
 package_declaration_element_list:
           package_declaration_element

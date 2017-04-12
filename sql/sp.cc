@@ -1329,7 +1329,7 @@ show_create_package(THD *thd, String *buf,
     (ddl_options.if_not_exists() &&
      buf->append(STRING_WITH_LEN("IF NOT EXISTS "))) ||
     append_identifier(thd, buf, spname->m_name.str, spname->m_name.length) ||
-    buf->append(STRING_WITH_LEN("AS BEGIN NULL; END;"));
+    buf->append(STRING_WITH_LEN(" AS END;"));
 }
 
 
@@ -1559,7 +1559,7 @@ log:
     thd->clear_error();
 
     StringBuffer<128> log_query(system_charset_info);
-    if (!show_create_package(thd, &log_query, spname, ddl_options))
+    if (show_create_package(thd, &log_query, spname, ddl_options))
     {
       my_error(ER_OUT_OF_RESOURCES, MYF(0));
       goto done;

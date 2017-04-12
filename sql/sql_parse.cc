@@ -3078,6 +3078,8 @@ static bool mysql_drop_package_body(THD *thd,
   // The database exists and looks like a package
   if (mysql_drop_package_body_internal(thd, spname))
     return true;
+  if (write_bin_log(thd, TRUE, thd->query(), thd->query_length()))
+    return true;
   my_ok(thd);
   return false;
 }
@@ -3107,7 +3109,7 @@ mysql_create_package(THD *thd, LEX *lex)
 #ifdef WITH_WSREP
 error:
 #endif
-  return false;
+  return true;
 }
 
 
