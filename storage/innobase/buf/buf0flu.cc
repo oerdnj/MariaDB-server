@@ -1118,10 +1118,9 @@ buf_flush_write_block_low(
 		dberr_t err = buf_page_io_complete(bpage, true);
 
 		if (err != DB_SUCCESS) {
-			ib_logf(IB_LOG_LEVEL_ERROR,
-				"Page encrypted while evicting a page %u"
-				" from space %u from LRU.",
-				bpage->offset, bpage->space);
+			ib::error() <<
+				"Page encrypted while evicting a page " << bpage->id
+				<< " from LRU.";
 		}
 	}
 

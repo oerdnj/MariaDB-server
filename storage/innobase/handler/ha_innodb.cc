@@ -6643,7 +6643,7 @@ ha_innobase::open(
 	MONITOR_INC(MONITOR_TABLE_OPEN);
 
 	bool	no_tablespace = false;
-	bool	ibd_missing = false;
+	bool	encrypted = false;
 	fil_space_t* space = NULL;
 
 	if (dict_table_is_discarded(ib_table)) {
@@ -10336,8 +10336,8 @@ ha_innobase::general_fetch(
 		DBUG_RETURN(HA_ERR_DECRYPTION_FAILED);
 	}
 
-	if (prebuilt->table->file_unreadable
-	    && fil_space_get(prebuilt->table->space) != NULL) {
+	if (m_prebuilt->table->file_unreadable
+	    && fil_space_get(m_prebuilt->table->space) != NULL) {
 		DBUG_RETURN(HA_ERR_DECRYPTION_FAILED);
 	}
 

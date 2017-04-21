@@ -565,6 +565,7 @@ buf_dblwr_process(void)
 		memset(read_buf, 0x0, page_size.physical());
 
 		IORequest	request;
+		IORequest	write_request(IORequest::WRITE);
 
 		request.dblwr_recover();
 
@@ -657,10 +658,6 @@ buf_dblwr_process(void)
 		/* Write the good page from the doublewrite buffer to
 		the intended position. */
 
-		IORequest	write_request(IORequest::WRITE);
-release:
-		fil_space_release(space);
-
 		fil_io(write_request, true, page_id, page_size,
 		       0, page_size.physical(),
 				const_cast<byte*>(page), NULL);
@@ -668,6 +665,7 @@ release:
 		ib::info() << "Recovered page " << page_id
 			<< " from the doublewrite buffer.";
 
+release:
 		if (space) {
 			fil_space_release(space);
 		}

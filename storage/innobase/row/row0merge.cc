@@ -4680,7 +4680,6 @@ row_merge_build_indexes(
 			alloc.allocate_large(3 * srv_sort_buf_size, &crypt_pfx));
 
 		if (crypt_block == NULL) {
-			fil_space_release(space);
 			DBUG_RETURN(DB_OUT_OF_MEMORY);
 		}
 	} else {

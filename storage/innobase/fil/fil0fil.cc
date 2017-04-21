@@ -325,6 +325,7 @@ fil_space_get_by_id(
 	return(space);
 }
 
+/*******************************************************************//**
 Returns the table space by a given name, NULL if not found. */
 UNIV_INLINE
 fil_space_t*
@@ -5435,7 +5436,7 @@ fil_aio_wait(
 	mutex_enter(&fil_system->mutex);
 
 	fil_node_complete_io(node, type);
-	ulint purpose = fil_node->space->purpose;
+	ulint purpose = node->space->purpose;
 
 	mutex_exit(&fil_system->mutex);
 

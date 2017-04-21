@@ -368,10 +368,6 @@ read_ahead:
 				break;
 			default:
 				ut_error;
-					space, i);
-				break;
-			default:
-				ut_error;
 			}
 		}
 	}
@@ -819,8 +815,6 @@ buf_read_ibuf_merge_pages(
 		dberr_t 	err = DB_SUCCESS;
 
 		buf_pool_t*	buf_pool = buf_pool_get(page_id);
-		dberr_t 	err = DB_SUCCESS;
-
 		bool			found;
 		const page_size_t	page_size(fil_space_get_page_size(
 			space_ids[i], &found));

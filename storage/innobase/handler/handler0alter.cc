@@ -5597,13 +5597,13 @@ ha_innobase::prepare_inplace_alter_table(
 		}
 	}
 
-	indexed_table = prebuilt->table;
+	indexed_table = m_prebuilt->table;
 
 	if (indexed_table->file_unreadable &&
 	    fil_space_get(indexed_table->space) != NULL) {
 		String str;
 		const char* engine= table_type();
-		push_warning_printf(user_thd, Sql_condition::WARN_LEVEL_WARN,
+		push_warning_printf(m_user_thd, Sql_condition::WARN_LEVEL_WARN,
 			HA_ERR_DECRYPTION_FAILED,
 			"Table %s is encrypted but encryption service or"
 			" used key_id is not available. "
@@ -5626,7 +5626,7 @@ ha_innobase::prepare_inplace_alter_table(
 
 	if (!(ha_alter_info->handler_flags & ~INNOBASE_INPLACE_IGNORE)) {
 		/* Nothing to do */
-		goto func_exit;
+		goto err_exit_no_heap;
 	}
 
 	if (ha_alter_info->handler_flags

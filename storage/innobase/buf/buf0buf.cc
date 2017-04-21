@@ -5944,13 +5944,13 @@ buf_page_io_complete(
 
 		if (bpage->size.is_compressed()) {
 			frame = bpage->zip.data;
-			os_atomic_increment_ulint(&buf_pool->n_pend_unzip, 1);
+			(void) my_atomic_addlint(&buf_pool->n_pend_unzip, 1);
 
 			if (uncompressed
 			    && !buf_zip_decompress((buf_block_t*) bpage,
 						   FALSE)) {
 
-				os_atomic_decrement_ulint(&buf_pool->n_pend_unzip, 1);
+				(void) my_atomic_addlint(&buf_pool->n_pend_unzip, -1);
 
 				ib::info() << "Page "
 					   << bpage->id
@@ -5958,11 +5958,10 @@ buf_page_io_complete(
 
 				err = DB_PAGE_CORRUPTED;
 
-				err = DB_PAGE_CORRUPTED;
-
 				goto database_corrupted;
 			}
-			os_atomic_decrement_ulint(&buf_pool->n_pend_unzip, 1);
+
+			(void) my_atomic_addlint(&buf_pool->n_pend_unzip, -1);
 		} else {
 			ut_a(uncompressed);
 			frame = ((buf_block_t*) bpage)->frame;
@@ -7542,7 +7541,6 @@ buf_page_decrypt_after_read(buf_page_t* bpage)
 				    space()->crypt_data->type != CRYPT_SCHEME_UNENCRYPTED) {
 					bpage->encrypted=true;
 				}
-				fil_space_release(space);
 
 				return (false);
 			}

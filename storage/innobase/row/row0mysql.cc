@@ -1442,17 +1442,16 @@ row_mysql_get_table_status(
 
 		fil_space_release(space);
 	} else {
-		ib_logf(IB_LOG_LEVEL_ERROR,
-			"InnoDB: MySQL is trying to use a table handle"
+		ib::error()
+			<< "InnoDB: MySQL is trying to use a table handle"
 			" but the .ibd file for"
-			" table %s does not exist."
+			" table " << table->name << " does not exist."
 			" Have you deleted the .ibd file"
 			" from the database directory under"
 			" the MySQL datadir, or have you"
 			" used DISCARD TABLESPACE?"
 			" Look from " REFMAN "innodb-troubleshooting.html"
-			" how you can resolve the problem.",
-			table->name);
+			" how you can resolve the problem.";
 
 		 err = DB_TABLESPACE_NOT_FOUND;
 	}
