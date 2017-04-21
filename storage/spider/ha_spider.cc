@@ -12082,6 +12082,7 @@ void ha_spider::check_direct_order_limit()
   DBUG_VOID_RETURN;
 }
 
+
 /********************************************************************
  * Check whether the current query is a SELECT DISTINCT using an
  * index in a non-partitioned Spider configuration, with a
@@ -12117,6 +12118,7 @@ void ha_spider::check_distinct_key_query()
 
     DBUG_VOID_RETURN;
 }
+
 
 /********************************************************************
  * Determine whether the current query's projection list
@@ -12156,6 +12158,7 @@ bool ha_spider::is_sole_projection_field( uint16 field_index )
 
     DBUG_RETURN( TRUE );
 }
+
 
 int ha_spider::check_ha_range_eof()
 {
