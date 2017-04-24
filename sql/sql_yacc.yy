@@ -6546,6 +6546,10 @@ attribute:
                                 $2->name,Lex->charset->csname));
             Lex->last_field->charset= $2;
           }
+        | COMPRESSED_SYM
+          {
+            Lex->last_field->unireg_check= Field::COMPRESSED;
+          }
         | serial_attribute
         ;
 

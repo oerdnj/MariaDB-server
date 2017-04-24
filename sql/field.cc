@@ -42,6 +42,7 @@
 #include "filesort.h"                    // change_double_for_sort
 #include "log_event.h"                   // class Table_map_log_event
 #include <m_ctype.h>
+#include <zlib.h>
 
 // Maximum allowed exponent value for converting string to decimal
 #define MAX_EXPONENT 1024
@@ -7845,6 +7846,7 @@ uint32 Field_blob::get_length(const uchar *pos, uint packlength_arg) const
 int Field_blob::copy_value(Field_blob *from)
 {
   DBUG_ASSERT(field_charset == from->charset());
+  DBUG_ASSERT(unireg_check == from->unireg_check);
   int rc= 0;
   uint32 length= from->get_length();
   uchar *data= from->get_ptr();
@@ -8333,7 +8335,160 @@ uint Field_blob::is_equal(Create_field *new_field)
 {
   return ((new_field->sql_type == get_blob_type_from_length(max_data_length()))
           && new_field->charset == field_charset &&
-          new_field->pack_length == pack_length());
+          new_field->pack_length == pack_length() &&
+          new_field->unireg_check == unireg_check); // Check if compressed
+}
+
+
+int Field_blob_compressed::store(const char *from, uint length,
+                                 CHARSET_INFO *cs)
+{
+  int rc= Field_blob::store(from, length, cs);
+  uint copy_length= get_length();
+  char *tmp= (char*) get_ptr();
+
+  {
+    uint hlen= 1;
+    ulong zlen= compressBound(copy_length);
+    uchar *zbuf= (uchar*) my_malloc(zlen + 5, MYF(MY_WME | MY_THREAD_SPECIFIC));
+    THD *thd= current_thd;
+
+    if (!zbuf)
+      goto oom_error;
+
+    if (copy_length >= thd->variables.column_compression_threshold &&
+        thd->variables.column_compression_zlib_level > 0)
+    {
+      if (packlength == 1)
+        *zbuf= copy_length;
+      else
+      {
+        for (uint shift= 28; shift; shift-= 7)
+        {
+          if (copy_length >> shift)
+          {
+            zbuf[hlen - 1]= 0x80 + ((copy_length >> shift) & 0x7f);
+            hlen++;
+          }
+        }
+        zbuf[hlen - 1]= copy_length & 0x7f;
+      }
+
+      if (compress2(zbuf + hlen, &zlen, (Bytef*) tmp, copy_length,
+                    thd->variables.column_compression_zlib_level) != Z_OK)
+      {
+        my_free(zbuf);
+        goto oom_error;
+      }
+    }
+
+    if (zlen + hlen >= copy_length)
+    {
+      zlen= copy_length;
+      hlen= 1;
+      zbuf[0]= 0;
+      memcpy(zbuf + 1, tmp, copy_length);
+    }
+
+    value.reset((char*) zbuf, (uint) zlen + hlen, compressBound(copy_length),
+                &my_charset_bin);
+    tmp= const_cast<char*>(value.ptr());
+
+    store_length(zlen + hlen);
+    bmove(ptr + packlength, (uchar*) &tmp, sizeof(char*));
+  }
+
+  return rc;
+oom_error:
+  bzero(ptr, Field_blob::pack_length());
+  return -1;
+}
+
+
+/* Workaround -Woverloaded-virtual warning */
+int Field_blob_compressed::store(double nr)
+{
+  CHARSET_INFO *cs= charset();
+  value.set_real(nr, NOT_FIXED_DEC, cs);
+  return store(value.ptr(), (uint) value.length(), cs);
+}
+
+
+int Field_blob_compressed::store(longlong nr, bool unsigned_val)
+{
+  CHARSET_INFO *cs= charset();
+  value.set_int(nr, unsigned_val, cs);
+  return store(value.ptr(), (uint) value.length(), cs);
+}
+
+
+String *Field_blob_compressed::val_str(String *val_buffer, String *val_ptr)
+{
+  ASSERT_COLUMN_MARKED_FOR_READ;
+  char *blob;
+  memcpy(&blob, ptr+packlength, sizeof(char*));
+  if (!blob)
+    val_ptr->set("",0,charset());	// A bit safer than ->length(0)
+  else
+  {
+    uint32 blob_length= get_length(ptr);
+    ulong zlen;
+
+    if (!blob_length)
+    {
+      val_ptr->set("", 0, charset());
+      return val_ptr;
+    }
+
+    if (packlength == 1)
+    {
+      zlen= (uchar) *blob;
+      blob_length--;
+      blob++;
+    }
+    else
+    {
+      uchar c;
+      zlen= 0;
+      do
+      {
+        c= (uchar) *blob;
+        zlen<<= 7;
+        zlen+= c & 0x7f;
+        blob++;
+        if (!--blob_length)
+        {
+          //push_warning
+          val_ptr->set("", 0, charset());
+          return val_ptr;
+        }
+      } while (c & 0x80);
+    }
+
+    if (!zlen)
+    {
+      val_ptr->set((const char*) blob, blob_length, charset());
+      return val_ptr;
+    }
+
+    if (val_ptr->alloc(zlen))
+    {
+      val_ptr->set("", 0, charset());
+      return val_ptr;
+    }
+
+    if (uncompress((Bytef*) val_ptr->ptr(), &zlen,
+                   (Bytef*) blob, blob_length) != Z_OK)
+    {
+      // push warning
+      val_ptr->set("", 0, charset());
+      return val_ptr;
+    }
+
+    val_ptr->set_charset(charset());
+    val_ptr->length(zlen);
+  }
+  return val_ptr;
 }
 
 
@@ -10398,10 +10553,18 @@ Field *make_field(TABLE_SHARE *share,
     }
 #endif
     if (f_is_blob(pack_flag))
-      return new (mem_root)
-        Field_blob(ptr,null_pos,null_bit,
-                   unireg_check, field_name, share,
-                   pack_length, field_charset);
+    {
+      if (unireg_check == Field::COMPRESSED)
+        return new (mem_root)
+          Field_blob_compressed(ptr, null_pos, null_bit,
+                     unireg_check, field_name, share,
+                     pack_length, field_charset);
+      else
+        return new (mem_root)
+          Field_blob(ptr, null_pos, null_bit,
+                     unireg_check, field_name, share,
+                     pack_length, field_charset);
+    }
     if (interval)
     {
       if (f_is_enum(pack_flag))

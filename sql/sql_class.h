@@ -706,6 +706,9 @@ typedef struct system_variables
   uint idle_transaction_timeout;
   uint idle_readonly_transaction_timeout;
   uint idle_readwrite_transaction_timeout;
+
+  uint column_compression_threshold;
+  uint column_compression_zlib_level;
 } SV;
 
 /**

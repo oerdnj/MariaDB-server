@@ -122,6 +122,11 @@ The following options may be given as the first argument:
  -r, --chroot=name   Chroot mysqld daemon during startup.
  --collation-server=name 
  Set the default collation.
+ --column-compression-threshold=# 
+ Minimum column data length eligible for compression
+ --column-compression-zlib-level=# 
+ zlib compression level (1 gives best speed, 9 gives best
+ compression)
  --completion-type=name 
  The transaction completion type. One of: NO_CHAIN, CHAIN,
  RELEASE
@@ -1215,6 +1220,8 @@ character-set-client-handshake TRUE
 character-set-filesystem binary
 character-sets-dir MYSQL_CHARSETSDIR/
 chroot (No default value)
+column-compression-threshold 100
+column-compression-zlib-level 6
 completion-type NO_CHAIN
 concurrent-insert AUTO
 console FALSE

@@ -3406,6 +3406,14 @@ mysql_prepare_create_table(THD *thd, HA_CREATE_INFO *create_info,
 	(sql_field->sql_type == MYSQL_TYPE_VARCHAR &&
          create_info->row_type != ROW_TYPE_FIXED))
       (*db_options)|= HA_OPTION_PACK_RECORD;
+
+    if (!(sql_field->flags & BLOB_FLAG) &&
+        sql_field->unireg_check == Field::COMPRESSED)
+    {
+        my_error(ER_WRONG_FIELD_SPEC, MYF(0), sql_field->field_name);
+        DBUG_RETURN(TRUE);
+    }
+
     it2.rewind();
   }
 
@@ -3717,6 +3725,14 @@ mysql_prepare_create_table(THD *thd, HA_CREATE_INFO *create_info,
 	  DBUG_RETURN(TRUE);
 	}
       }
+
+      if (sql_field->unireg_check == Field::COMPRESSED)
+      {
+        my_error(ER_COMPRESSED_COLUMN_USED_AS_KEY, MYF(0),
+                 column->field_name.str);
+        DBUG_RETURN(TRUE);
+      }
+
       cols2.rewind();
       if (key->type == Key::FULLTEXT)
       {

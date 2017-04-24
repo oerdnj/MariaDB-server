@@ -752,6 +752,18 @@ static Sys_var_struct Sys_collation_server(
        offsetof(CHARSET_INFO, name), DEFAULT(&default_charset_info),
        NO_MUTEX_GUARD, IN_BINLOG, ON_CHECK(check_collation_not_null));
 
+static Sys_var_uint Sys_olumn_compression_threshold(
+       "column_compression_threshold",
+       "Minimum column data length eligible for compression",
+       SESSION_VAR(column_compression_threshold), CMD_LINE(REQUIRED_ARG),
+       VALID_RANGE(0, UINT_MAX), DEFAULT(100), BLOCK_SIZE(1));
+
+static Sys_var_uint Sys_column_compression_zlib_level(
+       "column_compression_zlib_level",
+       "zlib compression level (1 gives best speed, 9 gives best compression)",
+       SESSION_VAR(column_compression_zlib_level), CMD_LINE(REQUIRED_ARG),
+       VALID_RANGE(0, 9), DEFAULT(6), BLOCK_SIZE(1));
+
 static const char *concurrent_insert_names[]= {"NEVER", "AUTO", "ALWAYS", 0};
 static Sys_var_enum Sys_concurrent_insert(
        "concurrent_insert", "Use concurrent insert with MyISAM",

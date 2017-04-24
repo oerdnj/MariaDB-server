@@ -715,7 +715,8 @@ public:
     TIMESTAMP_OLD_FIELD=18,     // TIMESTAMP created before 4.1.3
     TIMESTAMP_DN_FIELD=21,      // TIMESTAMP DEFAULT NOW()
     TIMESTAMP_UN_FIELD=22,      // TIMESTAMP ON UPDATE NOW()
-    TIMESTAMP_DNUN_FIELD=23     // TIMESTAMP DEFAULT NOW() ON UPDATE NOW()
+    TIMESTAMP_DNUN_FIELD=23,    // TIMESTAMP DEFAULT NOW() ON UPDATE NOW()
+    COMPRESSED= 24
     };
   enum geometry_type
   {
@@ -3228,7 +3229,8 @@ public:
     if (from->type() == MYSQL_TYPE_BIT)
       return do_field_int;
     */
-    if (!(from->flags & BLOB_FLAG) || from->charset() != charset())
+    if (!(from->flags & BLOB_FLAG) || from->charset() != charset() ||
+        from->unireg_check != unireg_check) // Check if compressed
       return do_conv_blob;
     if (from->pack_length() != Field_blob::pack_length())
       return do_copy_blob;
@@ -3245,6 +3247,7 @@ public:
   bool memcpy_field_possible(const Field *from) const
   {
     return Field_str::memcpy_field_possible(from) &&
+           unireg_check == from->unireg_check && // Check if compressed
            !table->copy_blobs;
   }
   int  store(const char *to,uint length,CHARSET_INFO *charset);
@@ -3384,6 +3387,37 @@ public:
   uint is_equal(Create_field *new_field);
 private:
   int do_save_field_metadata(uchar *first_byte);
+};
+
+
+class Field_blob_compressed: public Field_blob {
+public:
+  Field_blob_compressed(uchar *ptr_arg, uchar *null_ptr_arg,
+                        uchar null_bit_arg, enum utype unireg_check_arg,
+                        const char *field_name_arg, TABLE_SHARE *share,
+                        uint blob_pack_length, CHARSET_INFO *cs):
+    Field_blob(ptr_arg, null_ptr_arg, null_bit_arg, unireg_check_arg,
+               field_name_arg, share, blob_pack_length, cs) {}
+private:
+  int store(const char *to, uint length, CHARSET_INFO *charset);
+  int store(double nr);
+  int store(longlong nr, bool unsigned_val);
+  String *val_str(String *, String *);
+
+  uint get_key_image(uchar *buff, uint length, imagetype type_arg)
+  { DBUG_ASSERT(0); }
+  void set_key_image(const uchar *buff, uint length)
+  { DBUG_ASSERT(0); }
+  int key_cmp(const uchar *a, const uchar *b)
+  { DBUG_ASSERT(0); }
+  int key_cmp(const uchar *str, uint length)
+  { DBUG_ASSERT(0); }
+  Field *new_key_field(MEM_ROOT *root, TABLE *new_table,
+                       uchar *new_ptr, uint32 length,
+                       uchar *new_null_ptr, uint new_null_bit)
+  { DBUG_ASSERT(0); }
+  void sort_string(uchar *to, uint length)
+  { DBUG_ASSERT(0); }
 };
 
 
