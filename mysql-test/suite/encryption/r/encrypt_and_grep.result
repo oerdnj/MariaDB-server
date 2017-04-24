@@ -43,7 +43,7 @@ test/t1
 # t1 yes on expecting NOT FOUND
 NOT FOUND /foobarsecret/ in t1.ibd
 # t2 ... default expecting FOUND
-NOT FOUND /tempsecret/ in t2.ibd
+FOUND 12 /tempsecret/ in t2.ibd
 # t3 no  on expecting FOUND
 FOUND 12 /dummysecret/ in t3.ibd
 # ibdata1 expecting NOT FOUND

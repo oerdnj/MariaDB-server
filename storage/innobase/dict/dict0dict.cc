@@ -1178,39 +1178,35 @@ dict_table_open_on_name(
 
 	if (table != NULL) {
 
-		/* If table is encrypted return table */
+		/* If table is encrypted or corrupted */
 		if (ignore_err == DICT_ERR_IGNORE_NONE
-			&& table->file_unreadable) {
+		    && !table->is_readable()) {
 			/* Make life easy for drop table. */
 			dict_table_prevent_eviction(table);
 
+			if (table->corrupted) {
+
+				if (!dict_locked) {
+					mutex_exit(&dict_sys->mutex);
+				}
+
+				ib::error() <<
+					"Table " << table->name << " is corrupted. Please "
+					"drop the table and recreate.";
+
+				DBUG_RETURN(NULL);
+			}
 			if (table->can_be_evicted) {
 				dict_move_to_mru(table);
 			}
 
-			table->acquire();
+			++table->n_ref_count;
 
 			if (!dict_locked) {
 				mutex_exit(&dict_sys->mutex);
 			}
 
-			DBUG_RETURN(table);
-		}
-		/* If table is corrupted, return NULL */
-		else if (ignore_err == DICT_ERR_IGNORE_NONE
-		    && table->corrupted) {
-			/* Make life easy for drop table. */
-			dict_table_prevent_eviction(table);
-			if (!dict_locked) {
-				mutex_exit(&dict_sys->mutex);
-			}
-
-			ib::info() << "Table "
-				<< table->name
-				<< " is corrupted. Please drop the table"
-				" and recreate it";
-
-			DBUG_RETURN(NULL);
+			DBUG_RETURN (table);
 		}
 
 		if (table->can_be_evicted) {
@@ -6068,18 +6064,18 @@ dict_set_corrupted_by_space(
 	/* mark the table->corrupted bit only, since the caller
 	could be too deep in the stack for SYS_INDEXES update */
 	table->corrupted = true;
+	table->file_unreadable = true;
 
 	return(TRUE);
 }
 
-/**********************************************************************//**
-Flags a table with specified space_id encrypted in the data dictionary
+
+/** Flags a table with specified space_id encrypted in the data dictionary
 cache
 @param[in]	space_id	Tablespace id */
 UNIV_INTERN
 void
-dict_set_encrypted_by_space(
-	ulint	space_id)
+dict_set_encrypted_by_space(ulint	space_id)
 {
 	dict_table_t*   table;
 
@@ -6599,7 +6595,7 @@ dict_table_schema_check(
 		}
 	}
 
-	if (table->file_unreadable &&
+	if (!table->is_readable() &&
 	    fil_space_get(table->space) == NULL) {
 		/* missing tablespace */
 

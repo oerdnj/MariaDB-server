@@ -1985,9 +1985,9 @@ recv_read_in_area(
 
 /** Apply the hash table of stored log records to persistent data pages.
 @param[in]	last_batch	whether the change buffer merge will be
-				performed as part of the operation
-@return DB_SUCCESS or DB_DECRYPTION_FAILED */
-dberr_t
+				performed as part of the operation */
+UNIV_INTERN
+void
 recv_apply_hashed_log_recs(bool last_batch)
 {
 	for (;;) {
@@ -1999,7 +1999,7 @@ recv_apply_hashed_log_recs(bool last_batch)
 
 		if (recv_sys->found_corrupt_log) {
 			mutex_exit(&recv_sys->mutex);
-			return(DB_DECRYPTION_FAILED);
+			return;
 		}
 
 		mutex_exit(&recv_sys->mutex);
@@ -2086,7 +2086,11 @@ recv_apply_hashed_log_recs(bool last_batch)
 		mutex_exit(&(recv_sys->mutex));
 
 		if (recv_sys->found_corrupt_log) {
-			return(DB_DECRYPTION_FAILED);
+			return;
+		}
+
+		if (recv_sys->found_corrupt_log) {
+			return;
 		}
 
 		os_thread_sleep(500000);
@@ -2132,10 +2136,6 @@ recv_apply_hashed_log_recs(bool last_batch)
 	recv_sys_empty_hash();
 
 	mutex_exit(&recv_sys->mutex);
-
-	return (DB_SUCCESS);
-
-	return (DB_SUCCESS);
 }
 
 /** Tries to parse a single log record.

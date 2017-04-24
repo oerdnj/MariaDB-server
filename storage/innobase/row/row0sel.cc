@@ -4191,14 +4191,12 @@ row_search_mvcc(
 
 		DBUG_RETURN(DB_TABLESPACE_DELETED);
 
-	} else if (prebuilt->table->file_unreadable &&
-		   fil_space_get(prebuilt->table->space) == NULL) {
-
-		DBUG_RETURN(DB_TABLESPACE_NOT_FOUND);
-
-	} else if (prebuilt->table->file_unreadable) {
-
-		DBUG_RETURN(DB_DECRYPTION_FAILED);
+	} else if (!prebuilt->table->is_readable()) {
+		if (fil_space_get(prebuilt->table->space) == NULL) {
+			return(DB_TABLESPACE_NOT_FOUND);
+		} else {
+			return(DB_DECRYPTION_FAILED);
+		}
 	} else if (!prebuilt->index_usable) {
 		DBUG_RETURN(DB_MISSING_HISTORY);
 
@@ -4696,7 +4694,7 @@ rec_loop:
 
 	rec = btr_pcur_get_rec(pcur);
 
-	if (index->table->file_unreadable) {
+	if (!index->table->is_readable()) {
 		err = DB_DECRYPTION_FAILED;
 		goto lock_wait_or_error;
 	}
@@ -4788,6 +4786,7 @@ wrong_offs:
 				<< ". Run CHECK TABLE. You may need to"
 				" restore from a backup, or dump + drop +"
 				" reimport the table.";
+
 			ut_ad(0);
 			err = DB_CORRUPTION;
 

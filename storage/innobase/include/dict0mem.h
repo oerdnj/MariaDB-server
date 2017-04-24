@@ -1004,6 +1004,13 @@ struct dict_index_t{
 		return(UNIV_LIKELY(!uncommitted));
 	}
 
+	/* Returns true if this is a single-table tablespace
+	and the .ibd file is missing or page decryption failed
+	and/or page is corrupted.
+	@return true if table is readable
+	@retval false if table is not readable */
+	bool is_readable() const;
+
 	/** Flag an index committed or uncommitted.
 	@param[in]	committed	whether the index is committed */
 	void set_committed(bool committed)
@@ -1731,6 +1738,16 @@ public:
 	columns */
 	dict_vcol_templ_t*			vc_templ;
 
+	/* Returns true if this is a single-table tablespace
+	and the .ibd file is missing or page decryption failed
+	and/or page is corrupted.
+	@return true if table is readable
+	@retval false if table is not readable */
+	inline bool is_readable() const
+	{
+		return(UNIV_LIKELY(!file_unreadable));
+	}
+
 #ifdef UNIV_DEBUG
 	/** Value of 'magic_n'. */
 	#define DICT_TABLE_MAGIC_N		76333786
@@ -1746,6 +1763,16 @@ void
 lock_table_lock_list_init(
 /*======================*/
 	table_lock_list_t*	locks);		/*!< List to initialise */
+
+/* Returns true if this is a single-table tablespace
+and the .ibd file is missing or page decryption failed
+and/or page is corrupted.
+@return true if table is readable
+@retval false if table is not readable */
+inline bool dict_index_t::is_readable() const
+{
+	return(UNIV_LIKELY(!table->file_unreadable));
+}
 
 /** A function object to add the foreign key constraint to the referenced set
 of the referenced table, if it exists in the dictionary cache. */

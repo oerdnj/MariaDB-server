@@ -2595,6 +2595,11 @@ row_ins_clust_index_entry_low(
 			  __FILE__, __LINE__, auto_inc, &mtr);
 	cursor = btr_pcur_get_btr_cur(&pcur);
 	cursor->thr = thr;
+	if (err != DB_SUCCESS) {
+		index->table->file_unreadable = true;
+		mtr_commit(&mtr);
+		goto func_exit;
+	}
 
 #ifdef UNIV_DEBUG
 	{

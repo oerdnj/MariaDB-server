@@ -530,19 +530,19 @@ buf_dblwr_process(void)
 		ulint	page_no		= page_get_page_no(page);
 		ulint	space_id	= page_get_space_id(page);
 
-		fil_space_t* space = fil_space_acquire_silent(space_id);
+		FilSpace space(space_id, true);
 
-		if (space == NULL) {
+		if (!space()) {
 			/* Maybe we have dropped the tablespace
 			and this page once belonged to it: do nothing */
 			continue;
 		}
 
-		fil_space_open_if_needed(space);
-
 		const page_id_t		page_id(space_id, page_no);
 
-		if (page_no >= space->size) {
+		fil_space_open_if_needed(const_cast<fil_space_t*>(space()));
+
+		if (page_no >= space()->size) {
 
 			/* Do not report the warning if the tablespace
 			is scheduled for truncation or was truncated
@@ -557,7 +557,7 @@ buf_dblwr_process(void)
 			continue;
 		}
 
-		const page_size_t	page_size(space->flags);
+		const page_size_t	page_size(space()->flags);
 		ut_ad(!buf_page_is_zeroes(page, page_size));
 
 		/* We want to ensure that for partial reads the
@@ -571,8 +571,8 @@ buf_dblwr_process(void)
 
 		/* Read in the actual page from the file */
 		dberr_t	err = fil_io(
-			request, true,
-			page_id, page_size,
+				request, true,
+				page_id, page_size,
 				0, page_size.physical(), read_buf, NULL);
 
 		if (err != DB_SUCCESS) {
@@ -606,7 +606,7 @@ buf_dblwr_process(void)
 				   true, read_buf, page_size, space)) {
 				/* The page is good; there is no need
 				to consult the doublewrite buffer. */
-				goto release;
+				continue;
 			}
 
 			/* We intentionally skip this message for
@@ -637,7 +637,7 @@ buf_dblwr_process(void)
 			buffer. If not, we will report a fatal error
 			for a corrupted page somewhere else if that
 			page was truly needed. */
-			goto release;
+			continue;
 		}
 
 		if (page_no == 0) {
@@ -650,7 +650,7 @@ buf_dblwr_process(void)
 					" of page " << page_id
 					<< " due to invalid flags "
 					<< ib::hex(flags);
-				goto release;
+				continue;
 			}
 			/* The flags on the page should be converted later. */
 		}
@@ -664,11 +664,6 @@ buf_dblwr_process(void)
 
 		ib::info() << "Recovered page " << page_id
 			<< " from the doublewrite buffer.";
-
-release:
-		if (space) {
-			fil_space_release(space);
-		}
 	}
 
 	recv_dblwr.pages.clear();

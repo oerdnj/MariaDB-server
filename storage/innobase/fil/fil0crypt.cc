@@ -670,10 +670,12 @@ fil_space_encrypt(
 		}
 
 		bool corrupted = buf_page_is_corrupted(true, tmp_mem, page_size, space);
+		memcpy(tmp_mem+FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION, src+FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION, 8);
 		bool different = memcmp(src, tmp_mem, page_size.physical());
 
 		if (!ok || corrupted || corrupted1 || err != DB_SUCCESS || different) {
-			fprintf(stderr, "ok %d corrupted %d corrupted1 %d err %d different %d\n", ok , corrupted, corrupted1, err, different);
+			fprintf(stderr, "ok %d corrupted %d corrupted1 %d err %d different %d\n",
+				ok , corrupted, corrupted1, err, different);
 			fprintf(stderr, "src_frame\n");
 			buf_page_print(src_frame, page_size, BUF_PAGE_PRINT_NO_CRASH);
 			fprintf(stderr, "encrypted_frame\n");
@@ -726,25 +728,6 @@ fil_space_decrypt(
 		return false;
 	}
 
-	if (crypt_data == NULL) {
-		if (!(space == 0 && offset == 0) && key_version != 0) {
-			/* FIL_PAGE_FILE_FLUSH_LSN field i.e.
-			FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION
-			should be only defined for the
-			first page in a system tablespace
-			data file (ibdata*, not *.ibd), if not
-			clear it. */
-
-			DBUG_LOG("crypt",
-				 "Page " << page_id_t(space, offset)
-				 << " carries key_version " << key_version
-				 << " (should be undefined)");
-
-			mach_write_to_4(src_frame + FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION, 0);
-		}
-
-		return false;
-	}
 
 	ut_a(crypt_data != NULL && crypt_data->is_encrypted());
 
@@ -795,9 +778,6 @@ fil_space_decrypt(
 		memcpy(tmp_frame + page_size.physical() - FIL_PAGE_DATA_END,
 		       src_frame + page_size.physical() - FIL_PAGE_DATA_END,
 		       FIL_PAGE_DATA_END);
-
-		// clear key-version & crypt-checksum from dst
-		memset(tmp_frame + FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION, 0, 8);
 	}
 
 	srv_stats.pages_decrypted.inc();
@@ -888,6 +868,165 @@ fil_crypt_calculate_checksum(
 	return checksum;
 }
 
+/*********************************************************************
+Verify that post encryption checksum match calculated checksum.
+This function should be called only if tablespace contains crypt_data
+metadata (this is strong indication that tablespace is encrypted).
+Function also verifies that traditional checksum does not match
+calculated checksum as if it does page could be valid unencrypted,
+encrypted, or corrupted.
+
+@param[in]	page		Page to verify
+@param[in]	page_size	page size
+@param[in]	space		Tablespace
+@param[in]	pageno		Page no
+@return true if page is encrypted AND OK, false otherwise */
+UNIV_INTERN
+bool
+fil_space_verify_crypt_checksum(
+	byte* 			page,
+	const page_size_t&	page_size,
+#ifdef UNIV_INNOCHECKSUM
+	bool			strict_check,	/*!< --strict-check */
+	FILE*			log_file,	/*!< --log */
+#endif /* UNIV_INNOCHECKSUM */
+	const fil_space_t*	space,
+	ulint			pageno)
+{
+	uint key_version = mach_read_from_4(page+ FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION);
+
+	/* If page is not encrypted, return false */
+	if (key_version == 0) {
+		return(false);
+	}
+
+	srv_checksum_algorithm_t algorithm =
+			static_cast<srv_checksum_algorithm_t>(srv_checksum_algorithm);
+
+	/* If no checksum is used, can't continue checking. */
+	if (algorithm == SRV_CHECKSUM_ALGORITHM_NONE) {
+		return(true);
+	}
+
+	/* Read stored post encryption checksum. */
+	ib_uint32_t checksum = mach_read_from_4(
+		page + FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION + 4);
+
+	/* Declare empty pages non-corrupted */
+	if (checksum == 0
+	    && *reinterpret_cast<const ib_uint64_t*>(page + FIL_PAGE_LSN) == 0
+	    && buf_page_is_zeroes(page, page_size)) {
+		return(true);
+	}
+
+	/* Compressed and encrypted pages do not have checksum. Assume not
+	corrupted. Page verification happens after decompression in
+	buf_page_io_complete() using buf_page_is_corrupted(). */
+	if (mach_read_from_2(page+FIL_PAGE_TYPE) == FIL_PAGE_PAGE_COMPRESSED_ENCRYPTED) {
+		return (true);
+	}
+
+	ib_uint32_t cchecksum1 = 0;
+	ib_uint32_t cchecksum2 = 0;
+
+	/* Calculate checksums */
+	if (page_size.is_compressed()) {
+		cchecksum1 = page_zip_calc_checksum(
+			page, page_size.physical(), SRV_CHECKSUM_ALGORITHM_CRC32);
+		if(cchecksum1 != checksum) {
+			cchecksum2 = page_zip_calc_checksum(
+				page, page_size.physical(),
+				SRV_CHECKSUM_ALGORITHM_INNODB);
+		}
+	} else {
+		cchecksum1 = buf_calc_page_crc32(page);
+		if (cchecksum1 != checksum) {
+			cchecksum2 = (ib_uint32_t) buf_calc_page_new_checksum(
+				page);
+		}
+	}
+
+	/* If stored checksum matches one of the calculated checksums
+	page is not corrupted. */
+
+	bool encrypted = (checksum == cchecksum1 || checksum == cchecksum2
+		|| checksum == BUF_NO_CHECKSUM_MAGIC);
+
+	/* MySQL 5.6 and MariaDB 10.0 and 10.1 will write an LSN to the
+	first page of each system tablespace file at
+	FIL_PAGE_FILE_FLUSH_LSN offset. On other pages and in other files,
+	the field might have been uninitialized until MySQL 5.5. In MySQL 5.7
+	(and MariaDB Server 10.2.2) WL#7990 stopped writing the field for other
+	than page 0 of the system tablespace.
+
+	Starting from MariaDB 10.1 the field has been repurposed for
+	encryption key_version.
+
+	Starting with MySQL 5.7 (and MariaDB Server 10.2), the
+	field has been repurposed for SPATIAL INDEX pages for
+	FIL_RTREE_SPLIT_SEQ_NUM.
+
+	Note that FIL_PAGE_FILE_FLUSH_LSN is not included in the InnoDB page
+	checksum.
+
+	Thus, FIL_PAGE_FILE_FLUSH_LSN could contain any value. While the
+	field would usually be 0 for pages that are not encrypted, we cannot
+	assume that a nonzero value means that the page is encrypted.
+	Therefore we must validate the page both as encrypted and unencrypted
+	when FIL_PAGE_FILE_FLUSH_LSN does not contain 0.
+	*/
+
+	ulint checksum1 = mach_read_from_4(
+		page + FIL_PAGE_SPACE_OR_CHKSUM);
+
+	ulint checksum2 = checksum1;
+	bool valid;
+
+#ifdef UNIV_INNOCHECKSUM
+# define CKARGS page, checksum1, checksum2,			\
+		offset, log_file != NULL, log_file, algorithm
+#else
+# define CKARGS page, checksum1, checksum2
+#endif
+
+	if (page_size.is_compressed()) {
+		valid = (checksum1 == cchecksum1);
+	} else {
+		checksum2 = mach_read_from_4(
+			page + UNIV_PAGE_SIZE - FIL_PAGE_END_LSN_OLD_CHKSUM);
+
+		valid = buf_page_is_checksum_valid_crc32(
+			CKARGS, false
+			/* FIXME: also try the original crc32 that was
+			buggy on big-endian architectures? */)
+			|| buf_page_is_checksum_valid_innodb(CKARGS);
+#undef CKARGS
+	}
+
+	if (encrypted && valid) {
+		/* If page is encrypted and traditional checksums match,
+		page could be still encrypted, or not encrypted and valid or
+		corrupted. */
+#ifdef UNIV_INNOCHECKSUM
+		fprintf(log_file ? log_file : stderr,
+			"Page " ULINTPF ":" ULINTPF " may be corrupted."
+			" Post encryption checksum %u"
+			" stored [" ULINTPF ":" ULINTPF "] key_version %u\n",
+			space->id, pageno, checksum, checksum1, checksum2,
+			key_version);
+#else /* UNIV_INNOCHECKSUM */
+		ib::error()
+			<< " Page " << space->id << ":" << pageno
+			<< " may be corrupted."
+			" Post encryption checksum " << checksum
+			<< " stored [" << checksum1 << ":" << checksum2
+			<< "] key_version " << key_version;
+#endif
+		encrypted = false;
+	}
+
+	return(encrypted);
+}
 
 /***********************************************************************/
 
@@ -1794,10 +1933,7 @@ fil_crypt_rotate_page(
 		int needs_scrubbing = BTR_SCRUB_SKIP_PAGE;
 		lsn_t block_lsn = block->page.newest_modification;
 		byte* frame = buf_block_get_frame(block);
-		/* Here can't read key version from page as
-		FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION field is initialized
-		after decryption on fil_space_decrypt() */
-		uint kv =  block->page.key_version;
+		uint kv =  mach_read_from_4(frame+FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION);
 
 		/* check if tablespace is closing after reading page */
 		if (!space->is_stopping()) {
@@ -1913,6 +2049,8 @@ fil_crypt_rotate_page(
 				state->end_lsn = block_lsn;
 			}
 		}
+	} else {
+		mtr_commit(&mtr);
 	}
 
 	if (sleeptime_ms) {

@@ -6634,7 +6634,7 @@ ha_innobase::open(
 	ib_table->thd = (void*)thd;
 
 	/* No point to init any statistics if tablespace is still encrypted. */
-	if (!ib_table->file_unreadable) {
+	if (ib_table->is_readable()) {
 		dict_stats_init(ib_table);
 	} else {
 		ib_table->stat_initialized = 1;
@@ -6644,7 +6644,7 @@ ha_innobase::open(
 
 	bool	no_tablespace = false;
 	bool	encrypted = false;
-	fil_space_t* space = NULL;
+	FilSpace space;
 
 	if (dict_table_is_discarded(ib_table)) {
 
@@ -6659,10 +6659,11 @@ ha_innobase::open(
 
 		no_tablespace = false;
 
-	} else if (ib_table->file_unreadable) {
+	} else if (!ib_table->is_readable()) {
+		space = fil_space_acquire_silent(ib_table->space);
 
-		if ((space = fil_space_acquire_silent(ib_table->space))) {
-			if (space->crypt_data && space->crypt_data->is_encrypted()) {
+		if (space()) {
+			if (space()->crypt_data && space()->crypt_data->is_encrypted()) {
 				/* This means that tablespace was found but we could not
 				decrypt encrypted page. */
 				no_tablespace = true;
@@ -6695,13 +6696,14 @@ ha_innobase::open(
 		if (encrypted) {
 			bool warning_pushed = false;
 
-			if (!encryption_key_id_exists(space->crypt_data->key_id)) {
+			if (!encryption_key_id_exists(space()->crypt_data->key_id)) {
 				push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
 					HA_ERR_DECRYPTION_FAILED,
-					"Table %s is encrypted but encryption service or"
+					"Table %s in file %s is encrypted but encryption service or"
 					" used key_id %u is not available. "
 					" Can't continue reading table.",
-					space->name, space->crypt_data->key_id);
+					ib_table->name, space()->chain.start->name,
+					space()->crypt_data->key_id);
 				ret_err = HA_ERR_DECRYPTION_FAILED;
 				warning_pushed = true;
 			}
@@ -6712,16 +6714,12 @@ ha_innobase::open(
 			if (!warning_pushed) {
 				push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
 					HA_ERR_DECRYPTION_FAILED,
-					"Table %s is encrypted but encryption service or"
+					"Table %s in file %s is encrypted but encryption service or"
 					" used key_id is not available. "
 					" Can't continue reading table.",
-					space->name);
+					ib_table->name, space()->chain.start->name);
 				ret_err = HA_ERR_DECRYPTION_FAILED;
 			}
-		}
-
-		if (space) {
-			fil_space_release(space);
 		}
 
 		dict_table_close(ib_table, FALSE, FALSE);
@@ -6877,8 +6875,7 @@ ha_innobase::open(
 
 	if (m_prebuilt->table == NULL
 	    || dict_table_is_temporary(m_prebuilt->table)
-	    || m_prebuilt->table->persistent_autoinc
-	    || m_prebuilt->table->file_unreadable) {
+	    || !m_prebuilt->table->is_readable()) {
 	} else if (const Field* ai = table->found_next_number_field) {
 		initialize_auto_increment(m_prebuilt->table, ai);
 	}
@@ -10328,13 +10325,21 @@ ha_innobase::general_fetch(
 			DB_FORCED_ABORT, 0,  m_user_thd));
 	}
 
-	if (m_prebuilt->table->corrupted) {
-		DBUG_RETURN(HA_ERR_CRASHED);
+	if (m_prebuilt->table->is_readable()) {
+	} else {
+		if (m_prebuilt->table->corrupted) {
+			DBUG_RETURN(HA_ERR_CRASHED);
+		} else {
+			FilSpace space(m_prebuilt->table->space, true);
+
+			if (space()) {
+				DBUG_RETURN(HA_ERR_DECRYPTION_FAILED);
+			} else {
+				DBUG_RETURN(HA_ERR_NO_SUCH_TABLE);
+			}
+		}
 	}
 
-	if (m_prebuilt->table->file_unreadable) {
-		DBUG_RETURN(HA_ERR_DECRYPTION_FAILED);
-	}
 
 	if (m_prebuilt->table->file_unreadable
 	    && fil_space_get(m_prebuilt->table->space) != NULL) {
@@ -13683,7 +13688,7 @@ ha_innobase::discard_or_import_tablespace(
 		user may want to set the DISCARD flag in order to IMPORT
 		a new tablespace. */
 
-		if (dict_table->file_unreadable) {
+		if (!dict_table->is_readable()) {
 			ib_senderrf(
 				m_prebuilt->trx->mysql_thd,
 				IB_LOG_LEVEL_WARN, ER_TABLESPACE_MISSING,
@@ -13693,7 +13698,7 @@ ha_innobase::discard_or_import_tablespace(
 		err = row_discard_tablespace_for_mysql(
 			dict_table->name.m_name, m_prebuilt->trx);
 
-	} else if (!dict_table->file_unreadable) {
+	} else if (dict_table->is_readable()) {
 		/* Commit the transaction in order to
 		release the table lock. */
 		trx_commit_for_mysql(m_prebuilt->trx);
@@ -15473,7 +15478,7 @@ ha_innobase::check(
 
 		DBUG_RETURN(HA_ADMIN_CORRUPT);
 
-	} else if (m_prebuilt->table->file_unreadable &&
+	} else if (!m_prebuilt->table->is_readable() &&
 		   fil_space_get(m_prebuilt->table->space) == NULL) {
 
 		ib_senderrf(

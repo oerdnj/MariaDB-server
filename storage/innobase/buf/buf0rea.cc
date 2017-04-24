@@ -403,9 +403,11 @@ released by the i/o-handler thread.
 @param[in]	page_size	page size
 
 @return DB_SUCCESS if page has been read and is not corrupted,
-DB_PAGE_CORRUPTED if page based on checksum check is corrupted,
-DB_DECRYPTION_FAILED if page post encryption checksum matches but
-after decryption normal page checksum does not match.*/
+@retval DB_PAGE_CORRUPTED if page based on checksum check is corrupted,
+@retval DB_DECRYPTION_FAILED if page post encryption checksum matches but
+after decryption normal page checksum does not match.
+@retval DB_TABLESPACE_DELETED if tablespace .ibd file is missing */
+UNIV_INTERN
 dberr_t
 buf_read_page(
 	const page_id_t&	page_id,
@@ -426,11 +428,6 @@ buf_read_page(
 
 	/* Page corruption and decryption failures are already reported
 	in above function. */
-
-
-	/* Page corruption and decryption failures are already reported
-	in above function. */
-
 	srv_stats.buf_pool_reads.add(count);
 
 
@@ -881,7 +878,7 @@ buf_read_recv_pages(
 	ulint		n_stored)
 {
 	ulint			count;
-	dberr_t		err=DB_SUCCESS;
+	dberr_t			err = DB_SUCCESS;
 	ulint			i;
 	fil_space_t*		space	= fil_space_get(space_id);
 

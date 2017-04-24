@@ -116,6 +116,7 @@ struct fil_space_crypt_t : st_encryption_scheme
 		min_key_version(new_min_key_version),
 		page0_offset(0),
 		encryption(new_encryption),
+		key_found(0),
 		rotate_state()
 	{
 		key_id = new_key_id;

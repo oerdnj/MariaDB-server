@@ -43,16 +43,6 @@ call innodb_insert_proc(2000);
 insert into innodb_compact select * from innodb_normal;
 insert into innodb_dynamic select * from innodb_normal;
 commit;
-SELECT variable_value > 0 FROM information_schema.global_status WHERE variable_name = 'innodb_num_pages_encrypted';
-variable_value > 0
-1
-SELECT variable_value >= 0 FROM information_schema.global_status WHERE variable_name = 'innodb_num_pages_decrypted';
-variable_value >= 0
-1
-SELECT variable_value > 0 FROM information_schema.global_status WHERE variable_name = 'innodb_num_pages_compressed';
-variable_value > 0
-SELECT variable_value >= 0 FROM information_schema.global_status WHERE variable_name = 'innodb_num_pages_decompressed';
-variable_value >= 0
 SET GLOBAL innodb_file_format = `Barracuda`;
 SET GLOBAL innodb_file_per_table = ON;
 set global innodb_compression_algorithm = 1;
@@ -77,16 +67,6 @@ innodb_dynamic	CREATE TABLE `innodb_dynamic` (
   `c1` bigint(20) NOT NULL,
   `b` char(200) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 ROW_FORMAT=DYNAMIC
-SELECT variable_value >= 0 FROM information_schema.global_status WHERE variable_name = 'innodb_num_pages_encrypted';
-variable_value >= 0
-1
-SELECT variable_value > 0 FROM information_schema.global_status WHERE variable_name = 'innodb_num_pages_decrypted';
-variable_value > 0
-1
-SELECT variable_value >= 0 FROM information_schema.global_status WHERE variable_name = 'innodb_num_pages_compressed';
-variable_value >= 0
-SELECT variable_value > 0 FROM information_schema.global_status WHERE variable_name = 'innodb_num_pages_decompressed';
-variable_value > 0
 drop procedure innodb_insert_proc;
 drop table innodb_normal;
 drop table innodb_compact;

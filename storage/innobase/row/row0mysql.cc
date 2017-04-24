@@ -1490,20 +1490,9 @@ row_insert_for_mysql(
 
 		return(DB_TABLESPACE_DELETED);
 
-	} else if (UNIV_UNLIKELY(prebuilt->table->file_unreadable)) {
+	} else if (!prebuilt->table->is_readable()) {
 		return (row_mysql_get_table_status(prebuilt->table, trx, true));
 	} else if (srv_force_recovery) {
-
-		ib::error() << MODIFICATIONS_NOT_ALLOWED_MSG_FORCE_RECOVERY;
-		return(DB_READ_ONLY);
-	}
-	DBUG_EXECUTE_IF("mark_table_corrupted", {
-		/* Mark the table corrupted for the clustered index */
-		dict_index_t*	index = dict_table_get_first_index(table);
-		ut_ad(dict_index_is_clust(index));
-		dict_set_corrupted(index, trx, "INSERT TABLE"); });
-
-	if (dict_table_is_corrupted(table)) {
 
 		ib::error() << "Table " << table->name << " is corrupt.";
 		return(DB_TABLE_CORRUPT);
@@ -1897,6 +1886,9 @@ row_update_for_mysql_using_upd_graph(
 	bool		got_s_lock	= false;
 
 	DBUG_ENTER("row_update_for_mysql_using_upd_graph");
+	if (!table->is_readable()) {
+		return (row_mysql_get_table_status(table, trx, true));
+	}
 
 	ut_ad(trx);
 	ut_a(prebuilt->magic_n == ROW_PREBUILT_ALLOCATED);
@@ -3333,9 +3325,6 @@ row_discard_tablespace_for_mysql(
 
 	if (table == 0) {
 		err = DB_TABLE_NOT_FOUND;
-	} else if (table->file_unreadable &&
-		   fil_space_get(table->space) != NULL) {
-		err = DB_DECRYPTION_FAILED;
 	} else if (dict_table_is_temporary(table)) {
 
 		ib_senderrf(trx->mysql_thd, IB_LOG_LEVEL_ERROR,
@@ -3506,7 +3495,6 @@ row_drop_ancillary_fts_tables(
 	/* Drop ancillary FTS tables */
 	if (dict_table_has_fts_index(table)
 	    || DICT_TF2_FLAG_IS_SET(table, DICT_TF2_FTS_HAS_DOC_ID)) {
-
 		ut_ad(table->get_ref_count() == 0);
 		ut_ad(trx_is_started(trx));
 
@@ -3672,20 +3660,6 @@ row_drop_table_for_mysql(
 
 	if (!table) {
 		err = DB_TABLE_NOT_FOUND;
-		goto funct_exit;
-	}
-
-	/* If table is encrypted and table page encryption failed
-	return error. */
-	if (table->file_unreadable &&
-	    fil_space_get(table->space) != NULL) {
-
-		if (table->can_be_evicted) {
-			dict_table_move_from_lru_to_non_lru(table);
-		}
-
-		dict_table_close(table, TRUE, FALSE);
-		err = DB_DECRYPTION_FAILED;
 		goto funct_exit;
 	}
 
@@ -4337,7 +4311,8 @@ loop:
 					<< table->name << ".frm' was lost.";
 			}
 
-			if (table->file_unreadable) {
+			if (!table->is_readable()
+			    && fil_space_get(table->space) == NULL) {
 				ib::warn() << "Missing .ibd file for table "
 					<< table->name << ".";
 			}
@@ -4593,7 +4568,8 @@ row_rename_table_for_mysql(
 		err = DB_TABLE_NOT_FOUND;
 		goto funct_exit;
 
-	} else if (table->file_unreadable
+	} else if (!table->is_readable()
+		   && fil_space_get(table->space) == NULL
 		   && !dict_table_is_discarded(table)) {
 
 		err = DB_TABLE_NOT_FOUND;
@@ -4660,7 +4636,7 @@ row_rename_table_for_mysql(
 	the table is in a single-table tablespace. */
 	if (err == DB_SUCCESS
 	    && dict_table_is_file_per_table(table)
-	    && !table->file_unreadable) {
+	    && table->is_readable()) {
 		/* Make a new pathname to update SYS_DATAFILES. */
 		char*	new_path = row_make_new_pathname(table, new_name);
 

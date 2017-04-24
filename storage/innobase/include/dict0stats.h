@@ -178,7 +178,7 @@ if the persistent stats do not exist. */
 dberr_t
 dict_stats_rename_index(
 /*====================*/
-	const dict_table_t*	table,		/*!< in: table whose index
+	dict_table_t*		table,		/*!< in: table whose index
 						is renamed */
 	const char*		old_index_name,	/*!< in: old index name */
 	const char*		new_index_name)	/*!< in: new index name */

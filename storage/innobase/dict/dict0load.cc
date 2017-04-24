@@ -2868,6 +2868,7 @@ err_exit:
 	dict_load_tablespace(table, heap, ignore_err);
 
 
+
 	dict_load_columns(table, heap);
 
 	dict_load_virtual(table, heap);

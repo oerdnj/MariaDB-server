@@ -872,7 +872,7 @@ try_again:
 		innobase_init_vc_templ(node->table);
 	}
 
-	if (node->table->file_unreadable) {
+	if (!node->table->is_readable()) {
 		/* We skip purge of missing .ibd files */
 
 		dict_table_close(node->table, FALSE, FALSE);

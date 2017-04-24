@@ -4871,7 +4871,7 @@ new_clustered_failed:
 		clustered index of the old table, later. */
 		if (new_clustered
 		    || !ctx->online
-		    || user_table->file_unreadable
+		    || !user_table->is_readable()
 		    || dict_table_is_discarded(user_table)) {
 			/* No need to allocate a modification log. */
 			ut_ad(!ctx->add_index[a]->online_log);
@@ -5627,6 +5627,41 @@ ha_innobase::prepare_inplace_alter_table(
 	if (!(ha_alter_info->handler_flags & ~INNOBASE_INPLACE_IGNORE)) {
 		/* Nothing to do */
 		goto err_exit_no_heap;
+	}
+
+	indexed_table = m_prebuilt->table;
+
+	if (indexed_table->is_readable()) {
+	} else {
+		if (indexed_table->corrupted) {
+			/* Handled below */
+		} else {
+			FilSpace space(indexed_table->space, true);
+
+			if (space()) {
+				String str;
+				const char* engine= table_type();
+
+				push_warning_printf(m_user_thd, Sql_condition::WARN_LEVEL_WARN,
+					HA_ERR_DECRYPTION_FAILED,
+					"Table %s in file %s is encrypted but encryption service or"
+					" used key_id is not available. "
+					" Can't continue reading table.",
+					indexed_table->name, space()->chain.start->name);
+
+				my_error(ER_GET_ERRMSG, MYF(0), HA_ERR_DECRYPTION_FAILED, str.c_ptr(), engine);
+				DBUG_RETURN(true);
+			}
+		}
+	}
+
+	if (indexed_table->corrupted
+	    || dict_table_get_first_index(indexed_table) == NULL
+	    || dict_index_is_corrupted(
+		    dict_table_get_first_index(indexed_table))) {
+		/* The clustered index is corrupted. */
+		my_error(ER_CHECK_NO_SUCH_TABLE, MYF(0));
+		DBUG_RETURN(true);
 	}
 
 	if (ha_alter_info->handler_flags
@@ -6396,16 +6431,16 @@ ok_exit:
 	dict_index_t*	pk = dict_table_get_first_index(m_prebuilt->table);
 	ut_ad(pk != NULL);
 
+	if (!m_prebuilt->table->is_readable()
+	    || dict_table_is_discarded(m_prebuilt->table)) {
+		goto all_done;
+	}
+	
 	/* For partitioned tables this could be already allocated from a
 	previous partition invocation. For normal tables this is NULL. */
 	UT_DELETE(ctx->m_stage);
 
 	ctx->m_stage = UT_NEW_NOKEY(ut_stage_alter_t(pk));
-
-	if (m_prebuilt->table->file_unreadable
-	    || dict_table_is_discarded(m_prebuilt->table)) {
-		goto all_done;
-	}
 
 	/* If we are doing a table rebuilding or having added virtual
 	columns in the same clause, we will need to build a table template

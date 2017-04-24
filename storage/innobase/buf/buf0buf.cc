@@ -4365,22 +4365,23 @@ loop:
 			++retries;
 
 			ib::info() << "Retry: " << retries << "/" << BUF_PAGE_READ_MAX_RETRIES;
+
 			DBUG_EXECUTE_IF(
 				"innodb_page_corruption_retries",
-				/* This is needed as we might just mark
-				space corrupted. */
-				goto fatal_exit;
+				retries = BUF_PAGE_READ_MAX_RETRIES;
 			);
 		} else {
 			if (err) {
 				*err = local_err;
 			}
+
 			/* Encrypted pages that are not corrupted are marked
 			as encrypted and that fact is later pushed to
 			user thread. */
 			if (local_err == DB_DECRYPTION_FAILED) {
 				return (NULL);
 			}
+
 			/* Try to set table as corrupted instead of
 			asserting. */
 			if (page_id.space() > TRX_SYS_SPACE &&
@@ -4388,7 +4389,6 @@ loop:
 				return (NULL);
 			}
 
-fatal_exit:
 			ib::fatal() << "Unable to read page " << page_id
 					    << " into the buffer pool after "
 					    << BUF_PAGE_READ_MAX_RETRIES << " attempts."
@@ -5815,21 +5815,27 @@ corrupted page. Note that we can't be 100% sure if page is corrupted
 or decrypt/decompress just failed.
 @param[in,out]	bpage		Page
 @return DB_SUCCESS if page has been read and is not corrupted,
-DB_PAGE_CORRUPTED if page based on checksum check is corrupted,
-DB_DECRYPTION_FAILED if page post encryption checksum matches but
-after decryption normal page checksum does not match.*/
+@retval DB_PAGE_CORRUPTED if page based on checksum check is corrupted,
+@retval DB_DECRYPTION_FAILED if page post encryption checksum matches but
+after decryption normal page checksum does not match.
+@retval DB_TABLESPACE_DELETED if accessed tablespace is not found */
 static
 dberr_t
-buf_page_check_corrupt(
-	buf_page_t*	bpage)
+buf_page_check_corrupt(buf_page_t*	bpage)
 {
 	byte* dst_frame = (bpage->zip.data) ? bpage->zip.data :
 		((buf_block_t*) bpage)->frame;
-	fil_space_t* space = fil_space_acquire_silent(bpage->id.space());
+	FilSpace space(bpage->id.space(), true);
 	bool still_encrypted = false;
 	dberr_t err = DB_SUCCESS;
 	bool corrupted = false;
-	fil_space_crypt_t* crypt_data = space ? space->crypt_data : NULL;
+	fil_space_crypt_t* crypt_data = NULL;
+
+	if (!space()) {
+		return(DB_TABLESPACE_DELETED);
+	}
+
+	crypt_data = space()->crypt_data;
 
 	/* In buf_decrypt_after_read we have either decrypted the page if
 	page post encryption checksum matches and used key_id is found
@@ -5848,7 +5854,7 @@ buf_page_check_corrupt(
 		/* If traditional checksums match, we assume that page is
 		not anymore encrypted. */
 		corrupted = buf_page_is_corrupted(
-			true, dst_frame, bpage->size, space);
+			true, dst_frame, bpage->size, space());
 
 		if (!corrupted) {
 			bpage->encrypted = false;
@@ -5868,7 +5874,7 @@ buf_page_check_corrupt(
 
 		ib::error()
 			<< "The page " << bpage->id << " in file "
-			<< (space && space->name ? space->name : "NULL")
+			<< (space()->name ? space()->name : "NULL")
 			<< " cannot be decrypted.";
 
 		ib::info()
@@ -5884,10 +5890,6 @@ buf_page_check_corrupt(
 				" install correct key management plugin"
 				" and key file.";
 		}
-	}
-
-	if (space) {
-		fil_space_release(space);
 	}
 
 	return (err);
@@ -5928,9 +5930,9 @@ buf_page_io_complete(
 	ut_ad(io_type == BUF_IO_READ || io_type == BUF_IO_WRITE);
 
 	if (io_type == BUF_IO_READ) {
-		ulint	read_page_no;
-		ulint	read_space_id;
-		uint	key_version;
+		ulint	read_page_no = 0;
+		ulint	read_space_id = 0;
+		uint	key_version = 0;
 
 		ut_ad(bpage->zip.data != NULL || ((buf_block_t*)bpage)->frame != NULL);
 
@@ -5955,6 +5957,8 @@ buf_page_io_complete(
 				ib::info() << "Page "
 					   << bpage->id
 					   << " zip_decompress failure.";
+
+				err = DB_PAGE_CORRUPTED;
 
 				err = DB_PAGE_CORRUPTED;
 
@@ -6022,8 +6026,6 @@ database_corrupted:
 			if (err == DB_PAGE_CORRUPTED) {
 				fil_system_enter();
 				fil_space_t* space = fil_space_get_by_id(bpage->id.space());
-				fil_system_exit();
-
 
 				ib::error()
 					<< "Database page corruption on disk"
@@ -6032,6 +6034,8 @@ database_corrupted:
 					<< " page " << bpage->id
 					<< ". You may have to recover from "
 					<< "a backup.";
+
+				fil_system_exit();
 
 				buf_page_print(frame, bpage->size,
 					BUF_PAGE_PRINT_NO_CRASH);
@@ -7373,26 +7377,27 @@ buf_page_encrypt_before_write(
 		return src_frame;
 	}
 
-	fil_space_t* space = fil_space_acquire_silent(space_id);
+	FilSpace space(bpage->id.space(), true);
 
 	/* Tablespace must exist during write operation */
-	if (!space) {
+	if (!space()) {
 		/* This could be true on discard if we have injected a error
 		case e.g. in innodb.innodb-wl5522-debug-zip so that space
 		is already marked as stop_new_ops = true. */
 		return src_frame;
 	}
 
-	const page_size_t page_size(space->flags);
-	fil_space_crypt_t* crypt_data = space->crypt_data;
+	const page_size_t page_size(space()->flags);
 	bool encrypted = true;
+	fil_space_crypt_t* crypt_data = space()->crypt_data;
 
-	if (space->crypt_data != NULL && space->crypt_data->not_encrypted()) {
+	if (crypt_data != NULL && crypt_data->not_encrypted()) {
 		/* Encryption is disabled */
 		encrypted = false;
 	}
 
-	if (!srv_encrypt_tables && (crypt_data == NULL || crypt_data->is_default_encryption())) {
+	if (!srv_encrypt_tables
+	    && (crypt_data == NULL || crypt_data->is_default_encryption())) {
 		/* Encryption is disabled */
 		encrypted = false;
 	}
@@ -7406,8 +7411,9 @@ buf_page_encrypt_before_write(
 	bool page_compressed = fil_space_is_page_compressed(bpage->id.space());
 
 	if (!encrypted && !page_compressed) {
-		/* No need to encrypt or page compress the page */
-		fil_space_release(space);
+		/* No need to encrypt or page compress the page.
+		Clear key-version & crypt-checksum. */
+		memset(src_frame + FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION, 0, 8);
 		return src_frame;
 	}
 
@@ -7421,7 +7427,7 @@ buf_page_encrypt_before_write(
 
 	if (!page_compressed) {
 		/* Encrypt page content */
-		byte* tmp = fil_space_encrypt(space,
+		byte* tmp = fil_space_encrypt(space(),
 					      bpage->id.page_no(),
 					      bpage->newest_modification,
 					      src_frame,
@@ -7459,7 +7465,7 @@ buf_page_encrypt_before_write(
 		if(encrypted) {
 
 			/* And then we encrypt the page content */
-			tmp = fil_space_encrypt(space,
+			tmp = fil_space_encrypt(space(),
 						bpage->id.page_no(),
 						bpage->newest_modification,
 						tmp,
@@ -7471,7 +7477,6 @@ buf_page_encrypt_before_write(
 
 	ut_d(fil_page_type_validate(dst_frame));
 
-	fil_space_release(space);
 	// return dst_frame which will be written
 	return dst_frame;
 }
@@ -7498,7 +7503,7 @@ buf_page_decrypt_after_read(buf_page_t* bpage)
 		return (true);
 	}
 
-	FilSpace space(bpage->id.space(), true);
+	FilSpace space(bpage->id.space(), false, true);
 
 	/* Page is encrypted if encryption information is found from
 	tablespace and page contains used key_version. This is true
@@ -7551,7 +7556,7 @@ buf_page_decrypt_after_read(buf_page_t* bpage)
 			ut_d(fil_page_type_validate(dst_frame));
 
 			/* decrypt using crypt_buf to dst_frame */
-			byte* res = fil_space_decrypt(space,
+			byte* res = fil_space_decrypt(space(),
 						slot->crypt_buf,
 						dst_frame,
 						&bpage->encrypted);

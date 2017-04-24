@@ -1109,9 +1109,11 @@ retry_page_get:
 				 buf_mode, file, line, mtr, &err);
 	tree_blocks[n_blocks] = block;
 
-	/* Note that here we allow block == NULL and err == DB_SUCCESS
-	see below */
+	/* Note that block==NULL signifies either an error or change
+	buffering. */
+
 	if (err != DB_SUCCESS) {
+		ut_ad(block == NULL);
 		if (err == DB_DECRYPTION_FAILED) {
 			ib_push_warning((void *)NULL,
 				DB_DECRYPTION_FAILED,
@@ -2163,6 +2165,9 @@ btr_cur_open_at_index_side_func(
 
 		ut_ad((block != NULL) == (err == DB_SUCCESS));
 
+
+		ut_ad((block != NULL) == (err == DB_SUCCESS));
+
 		if (err != DB_SUCCESS) {
 			if (err == DB_DECRYPTION_FAILED) {
 				ib_push_warning((void *)NULL,
@@ -2523,6 +2528,8 @@ btr_cur_open_at_rnd_pos_func(
 
 		ut_ad((block != NULL) == (err == DB_SUCCESS));
 
+		ut_ad((block != NULL) == (err == DB_SUCCESS));
+
 		if (err != DB_SUCCESS) {
 			if (err == DB_DECRYPTION_FAILED) {
 				ib_push_warning((void *)NULL,
@@ -2533,6 +2540,7 @@ btr_cur_open_at_rnd_pos_func(
 					index->table->name);
 				index->table->file_unreadable = true;
 			}
+
 			goto exit_loop;
 		}
 
@@ -5518,22 +5526,13 @@ btr_estimate_n_rows_in_range_low(
 				   << " table: " << index->table->name
 				   << " index: " << index->name;
 		}
-
-		if (index->table->file_unreadable) {
-			mtr_commit(&mtr);
-			return (0);
-		}
-
-		ut_ad(page_rec_is_infimum(btr_cur_get_rec(&cursor)));
-
-		/* The range specified is wihout a left border, just
-		'x < 123' or 'x <= 123' and btr_cur_open_at_index_side()
-		positioned the cursor on the infimum record on the leftmost
-		page, which must not be counted. */
-		should_count_the_left_border = false;
 	}
 
 	mtr_commit(&mtr);
+
+	if (!index->table->is_readable()) {
+		return (0);
+	}
 
 	mtr_start(&mtr);
 

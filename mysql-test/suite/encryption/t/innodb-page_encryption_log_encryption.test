@@ -10,6 +10,7 @@
 SET GLOBAL innodb_file_format = `Barracuda`;
 SET GLOBAL innodb_file_per_table = ON;
 --enable_warnings
+
 create table innodb_normal(c1 bigint not null, b char(200)) engine=innodb;
 show warnings;
 create table innodb_compact(c1 bigint not null, b char(200)) engine=innodb row_format=compact encrypted=yes encryption_key_id=1;
@@ -57,7 +58,10 @@ SELECT variable_value >= 0 FROM information_schema.global_status WHERE variable_
 --source include/restart_mysqld.inc
 
 --disable_warnings
+SET GLOBAL innodb_file_format = `Barracuda`;
+SET GLOBAL innodb_file_per_table = ON;
 --enable_warnings
+
 update innodb_normal set c1 = c1 +1;
 update innodb_compact set c1 = c1 + 1;
 update innodb_compressed set c1 = c1 + 1;

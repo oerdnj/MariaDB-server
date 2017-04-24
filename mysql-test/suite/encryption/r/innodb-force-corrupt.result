@@ -1,7 +1,9 @@
 CALL mtr.add_suppression("InnoDB: Database page corruption on disk or a failed .*");
 CALL mtr.add_suppression("InnoDB: Corruption: Block in space_id .*");
 CALL mtr.add_suppression("InnoDB: However key management plugin or used key_version .*");
-CALL mtr.add_suppression("InnoDB: The page .* cannot be decrypted.");
+call mtr.add_suppression("InnoDB: The page \[page id: space=[0-9]+, page number=[0-9]+\] in file test/t1 cannot be decrypted.");
+call mtr.add_suppression("InnoDB: The page \[page id: space=[0-9]+, page number=[0-9]+\] in file test/t2 cannot be decrypted.");
+call mtr.add_suppression("InnoDB: The page \[page id: space=[0-9]+, page number=[0-9]+\] in file test/t3 cannot be decrypted.");
 SET GLOBAL innodb_file_format = `Barracuda`;
 SET GLOBAL innodb_file_per_table = ON;
 set global innodb_compression_algorithm = 1;
