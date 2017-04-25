@@ -1652,7 +1652,7 @@ row_ins_check_foreign_constraint(
 	}
 
 	if (check_table == NULL
-	    || check_table->ibd_file_missing
+	    || !check_table->is_readable()
 	    || check_index == NULL) {
 
 		if (!srv_read_only_mode && check_ref) {
@@ -2597,6 +2597,11 @@ row_ins_clust_index_entry_low(
 			  __FILE__, __LINE__, auto_inc, &mtr);
 	cursor = btr_pcur_get_btr_cur(&pcur);
 	cursor->thr = thr;
+	if (err != DB_SUCCESS) {
+		index->table->file_unreadable = true;
+		mtr_commit(&mtr);
+		goto func_exit;
+	}
 
 #ifdef UNIV_DEBUG
 	{
@@ -2930,7 +2935,7 @@ row_ins_sec_index_entry_low(
 				" used key_id is not available. "
 				" Can't continue reading table.",
 				index->table->name);
-			index->table->is_encrypted = true;
+			index->table->file_unreadable = true;
 		}
 		goto func_exit;
 	}
