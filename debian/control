@@ -20,10 +20,12 @@ Build-Depends: bison,
                libpam0g-dev,
                libreadline-gplv2-dev,
                libssl-dev (<< 1.1.0) | libssl1.0-dev,
+               libxml2-dev,
                lsb-release,
                perl (>= 5.6.0),
                po-debconf,
                psmisc,
+               unixodbc-dev,
                zlib1g-dev (>= 1:1.1.3-5~)
 Standards-Version: 3.8.2
 Homepage: http://mariadb.org/
@@ -420,14 +422,9 @@ Description: MariaDB database regression test suite (metapackage for the latest 
 
 Package: mariadb-connect-engine-10.1
 Architecture: any
-Depends: libxml2,
-         mariadb-server-10.1,
-         unixodbc
-Build-Depends: libxml2-dev,
-               mariadb-server-10.1,
-               unixodbc-dev,
-               ${misc:Depends},
-               ${shlibs:Depends}
+Depends: mariadb-server-10.1,
+         ${misc:Depends},
+         ${shlibs:Depends}
 Description: Connect storage engine for MariaDB
  Connect engine supports a number of file formats (dbf, xml, txt, bin, etc),
  connections to ODBC tables and remote MySQL tables, as well as a number of
