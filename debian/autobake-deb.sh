@@ -23,35 +23,6 @@ fi
 # Debian policy and targetting Debian Sid. Then case-by-case run in autobake-deb.sh
 # tests for backwards compatibility and strip away parts on older builders.
 
-# If libsystemd-dev is not available (before Debian Jessie or Ubuntu Wily)
-# clean away the systemd stanzas so the package can build without them.
-if ! apt-cache madison libsystemd-dev | grep 'libsystemd-dev' >/dev/null 2>&1
-then
-  sed '/dh-systemd/d' -i debian/control
-  sed '/libsystemd-dev/d' -i debian/control
-  sed 's/ --with systemd//' -i debian/rules
-  sed '/systemd/d' -i debian/rules
-  sed '/\.service/d' -i debian/rules
-  sed '/galera_new_cluster/d' -i debian/mariadb-server-10.2.install
-  sed '/galera_recovery/d' -i debian/mariadb-server-10.2.install
-  sed '/mariadb-service-convert/d' -i debian/mariadb-server-10.2.install
-fi
-
-# Convert gcc version to numberical value. Format is Mmmpp where M is Major
-# version, mm is minor version and p is patch.
-GCCVERSION=$(gcc -dumpversion | sed -e 's/\.\([0-9][0-9]\)/\1/g' -e 's/\.\([0-9]\)/0\1/g' -e 's/^[0-9]\{3,4\}$/&00/')
-# Don't build rocksdb package if gcc version is less than 4.8 or we are running on
-# x86 32 bit.
-if [[ $GCCVERSION -lt 40800 ]] || [[ $(arch) =~ i[346]86 ]]
-then
-  sed '/Package: mariadb-plugin-rocksdb/,+7d' -i debian/control
-fi
-if [[ $GCCVERSION -lt 40800 ]]
-then
-  sed '/Package: mariadb-plugin-aws-key-management-10.2/,+13d' -i debian/control
-fi
-
-
 # Adjust changelog, add new version
 echo "Incrementing changelog and starting build scripts"
 

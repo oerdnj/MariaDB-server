@@ -58,6 +58,10 @@ ifneq ($(TRAVIS),)
   NO_PACKAGES += --no-package=mariadb-test-data --no-package=mariadb-test
 endif
 
+ifeq ($(DEB_DISTRIBUTION,$(filter $(DEB_DISTRIBUTION),wheezy)))
+  NO_PACKAGES += --no-package=mariadb-plugin-aws-key-management-10.2 --no-package=mariadb-plugin-rocksdb
+endif
+
 override_dh_auto_clean:
 	@echo "RULES.$@"
 	dh_testdir
