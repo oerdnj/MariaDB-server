@@ -33,7 +33,9 @@ PATCHLEVEL="+maria"
 LOGSTRING="MariaDB build"
 CODENAME="$(lsb_release -sc)"
 
-dch -b -D ${CODENAME} -v "${UPSTREAM}${PATCHLEVEL}~${CODENAME}" "Automatic build with ${LOGSTRING}."
+DEB_VERSION="${UPSTREAM}-${DEB_REVISION:-0}${PATCHLEVEL}~${CODENAME}"
+
+dch -b -D "${CODENAME}" -v "${DEB_VERSION}" "Automatic build with ${LOGSTRING}."
 
 echo "Creating package version ${UPSTREAM}${PATCHLEVEL}~${CODENAME} ... "
 
