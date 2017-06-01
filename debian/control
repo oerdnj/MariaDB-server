@@ -553,8 +553,6 @@ Description: Spider storage engine for MariaDB
  instances to be handled as if they were on the same insctance. It refers to one
  possible implementation of ISO/IEC 9075-9:2008 SQL/MED.
 
- Cassandra.
-
 Package: mariadb-plugin-gssapi-server
 Architecture: any
 Depends: libgssapi-krb5-2,
