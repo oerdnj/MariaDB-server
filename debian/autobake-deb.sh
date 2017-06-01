@@ -23,14 +23,6 @@ fi
 # Debian policy and targetting Debian Sid. Then case-by-case run in autobake-deb.sh
 # tests for backwards compatibility and strip away parts on older builders.
 
-# If libpcre3-dev (>= 2:8.35-3.2~) is not available (before Debian Jessie or Ubuntu Wily)
-# clean away the PCRE3 stanzas so the package can build without them.
-# Update check when version 2:8.40 or newer is available.
-if ! apt-cache madison libpcre3-dev | grep 'libpcre3-dev *| *2:8\.3[2-9]' >/dev/null 2>&1
-then
-  sed '/libpcre3-dev/d' -i debian/control
-fi
-
 # If libsystemd-dev is not available (before Debian Jessie or Ubuntu Wily)
 # clean away the systemd stanzas so the package can build without them.
 if ! apt-cache madison libsystemd-dev | grep 'libsystemd-dev' >/dev/null 2>&1
