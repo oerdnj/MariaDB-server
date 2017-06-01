@@ -35,9 +35,11 @@ CODENAME="$(lsb_release -sc)"
 #
 echo "Incrementing changelog and starting build scripts"
 
-dch -b -D ${CODENAME} -v "${UPSTREAM}${PATCHLEVEL}-${RELEASE_NAME}${RELEASE_EXTRA:+-${RELEASE_EXTRA}}1~${CODENAME}" "Automatic build with ${LOGSTRING}."
+DEB_VERSION="${UPSTREAM}-${DEB_REVISION:-0}${PATCHLEVEL}-${RELEASE_NAME}${RELEASE_EXTRA:+-${RELEASE_EXTRA}}1~${CODENAME}"
 
-echo "Creating package version ${UPSTREAM}${PATCHLEVEL}-${RELEASE_NAME}${RELEASE_EXTRA:+-${RELEASE_EXTRA}}1~${CODENAME} ... "
+dch -b -D "${CODENAME}" -v "${DEB_VERSION}" "Automatic build with ${LOGSTRING}."
+
+echo "Creating package version ${DEB_VERSION} ... "
 
 # Build the package.
 # Pass -I so that .git and other unnecessary temporary and source control files
