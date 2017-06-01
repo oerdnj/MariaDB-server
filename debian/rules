@@ -53,6 +53,11 @@ endif
 # Add support for verbose builds
 MAKEFLAGS += VERBOSE=1
 
+NO_PACKAGES =
+ifneq ($(TRAVIS),)
+  NO_PACKAGES += --no-package=mariadb-test-data --no-package=mariadb-test
+endif
+
 override_dh_auto_clean:
 	@echo "RULES.$@"
 	dh_testdir
@@ -191,6 +196,6 @@ get-orig-source:
 	uscan --force-download --verbose
 
 %:
-	dh $@ --parallel --with dpatch --with systemd
+	dh $@ --parallel --with dpatch --with systemd $(NO_PACKAGES)
 
 # vim: ts=8

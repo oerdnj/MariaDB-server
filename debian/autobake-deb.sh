@@ -17,18 +17,6 @@ then
   export DEB_BUILD_OPTIONS="nocheck"
 fi
 
-# Travis-CI optimizations
-if [[ $TRAVIS ]]
-then
-  # On Travis-CI, the log must stay under 4MB so make the build less verbose
-  sed -i -e '/Add support for verbose builds/,+2d' debian/rules
-
-  # Don't include test suite package on Travis-CI to make the build time shorter
-  sed '/Package: mariadb-test-data/,+26d' -i debian/control
-  sed '/Package: mariadb-test/,+34d' -i debian/control
-fi
-
-
 # Look up distro-version specific stuff
 #
 # Always keep the actual packaging as up-to-date as possible following the latest
