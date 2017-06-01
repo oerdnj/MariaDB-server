@@ -1,5 +1,6 @@
 #!/usr/bin/make -f
 
+export DH_OPTIONS=
 export DH_VERBOSE=1
 
 PACKAGE=mariadb-10.1
@@ -51,6 +52,10 @@ builddir = $(BUILDDIR)
 # performance gain if enabled. See #299382.
 ifeq ($(STATIC_MYSQLD), 1)
     USE_STATIC_MYSQLD=--with-mysqld-ldflags=-all-static
+endif
+
+ifeq ($(DISTRIBUTION),$(filter $(DISTRIBUTION),wheezy))
+    DH_OPTIONS += --no-package=mariadb-cracklib-password-check-10.1
 endif
 
 configure: patch configure-stamp
