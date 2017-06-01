@@ -35,14 +35,6 @@ fi
 # Debian policy and targetting Debian Sid. Then case-by-case run in autobake-deb.sh
 # tests for backwards compatibility and strip away parts on older builders.
 
-# If libcrack2 (>= 2.9.0) is not available (before Debian Jessie and Ubuntu Trusty)
-# clean away the cracklib stanzas so the package can build without them.
-if ! apt-cache madison libcrack2-dev | grep 'libcrack2-dev *| *2\.9' >/dev/null 2>&1
-then
-  sed '/libcrack2-dev/d' -i debian/control
-  sed '/Package: mariadb-plugin-cracklib/,+9d' -i debian/control
-fi
-
 # If libpcre3-dev (>= 2:8.35-3.2~) is not available (before Debian Jessie or Ubuntu Wily)
 # clean away the PCRE3 stanzas so the package can build without them.
 # Update check when version 2:8.40 or newer is available.
