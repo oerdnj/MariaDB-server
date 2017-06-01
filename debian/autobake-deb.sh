@@ -37,7 +37,7 @@ echo "Incrementing changelog and starting build scripts"
 
 DEB_VERSION="${UPSTREAM}-${DEB_REVISION:-0}${PATCHLEVEL}-${RELEASE_NAME}${RELEASE_EXTRA:+-${RELEASE_EXTRA}}1~${CODENAME}"
 
-dch -b -D "${CODENAME}" -v "${DEB_VERSION}" "Automatic build with ${LOGSTRING}."
+dch -b --force-distribution -D "${CODENAME}" -v "${DEB_VERSION}" "Automatic build with ${LOGSTRING}."
 
 echo "Creating package version ${DEB_VERSION} ... "
 
