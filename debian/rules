@@ -60,7 +60,7 @@ endif
 
 WITH_SYSTEMD := --with systemd
 
-ifeq ($(DISTRIBUTION),$(filter $(DISTRIBUTION),wheezy)))
+ifeq ($(DISTRIBUTION),$(filter $(DISTRIBUTION),wheezy))
   DH_OPTIONS += --no-package=mariadb-plugin-aws-key-management-10.2 \
 		--no-package=mariadb-plugin-rocksdb \
 		--no-package=mariadb-cracklib-password-check-10.2
