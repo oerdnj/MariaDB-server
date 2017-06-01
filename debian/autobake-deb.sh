@@ -35,7 +35,7 @@ CODENAME="$(lsb_release -sc)"
 
 DEB_VERSION="${UPSTREAM}-${DEB_REVISION:-0}${PATCHLEVEL}~${CODENAME}"
 
-dch -b -D "${CODENAME}" -v "${DEB_VERSION}" "Automatic build with ${LOGSTRING}."
+dch -b --force-distribution -D "${CODENAME}" -v "${DEB_VERSION}" "Automatic build with ${LOGSTRING}."
 
 echo "Creating package version ${UPSTREAM}${PATCHLEVEL}~${CODENAME} ... "
 
