@@ -1,0 +1,21 @@
+From: Debian MySQL Maintainers <pkg-mysql-maint@lists.alioth.debian.org>
+Date: Sun, 23 Apr 2017 15:10:45 +0200
+Subject: hurd_socket
+
+---
+ mysql-test/lib/My/Platform.pm | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/mysql-test/lib/My/Platform.pm b/mysql-test/lib/My/Platform.pm
+index 110cf8a..c49450b 100644
+--- a/mysql-test/lib/My/Platform.pm
++++ b/mysql-test/lib/My/Platform.pm
+@@ -112,6 +112,8 @@ sub check_socket_path_length {
+   return 0 if ($^O eq 'aix');
+   # See Debian bug #670722 - failing on kFreeBSD even after setting short path
+   return 0 if $^O eq 'gnukfreebsd' and length $path < 40;
++  # GNU/Hurd doesn't have hostpath(), but no limitation either.
++  return 0 if $^O eq 'gnu';
+ 
+   require IO::Socket::UNIX;
+ 

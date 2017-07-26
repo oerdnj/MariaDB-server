@@ -1,0 +1,34 @@
+From: Debian MySQL Maintainers <pkg-mysql-maint@lists.alioth.debian.org>
+Date: Sun, 23 Apr 2017 15:10:44 +0200
+Subject: mips-groonga-atomic
+
+---
+ storage/mroonga/vendor/groonga/CMakeLists.txt     | 2 ++
+ storage/mroonga/vendor/groonga/lib/CMakeLists.txt | 1 +
+ 2 files changed, 3 insertions(+)
+
+diff --git a/storage/mroonga/vendor/groonga/CMakeLists.txt b/storage/mroonga/vendor/groonga/CMakeLists.txt
+index 2d8a59f..c1805a3 100644
+--- a/storage/mroonga/vendor/groonga/CMakeLists.txt
++++ b/storage/mroonga/vendor/groonga/CMakeLists.txt
+@@ -234,6 +234,8 @@ endmacro()
+ include(build/ac_macros/check_headers.m4)
+ include(build/ac_macros/check_functions.m4)
+ 
++ac_check_lib(atomic __atomic_store_8)
++
+ ac_check_symbols(fpclassify math.h)
+ ac_check_lib(m fpclassify)
+ 
+diff --git a/storage/mroonga/vendor/groonga/lib/CMakeLists.txt b/storage/mroonga/vendor/groonga/lib/CMakeLists.txt
+index 7825878..975bdd5 100644
+--- a/storage/mroonga/vendor/groonga/lib/CMakeLists.txt
++++ b/storage/mroonga/vendor/groonga/lib/CMakeLists.txt
+@@ -62,6 +62,7 @@ endif()
+ set_target_properties(libgroonga PROPERTIES OUTPUT_NAME "groonga")
+ 
+ set(GRN_ALL_LIBRARIES
++    ${ATOMIC_LIBS}
+     ${EXECINFO_LIBS}
+     ${RT_LIBS}
+     ${PTHREAD_LIBS}

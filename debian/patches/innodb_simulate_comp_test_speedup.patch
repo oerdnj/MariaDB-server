@@ -1,0 +1,16 @@
+From: Debian MySQL Maintainers <pkg-mysql-maint@lists.alioth.debian.org>
+Date: Sun, 23 Apr 2017 15:10:44 +0200
+Subject: innodb_simulate_comp_test_speedup
+
+---
+ mysql-test/suite/innodb/t/innodb_simulate_comp_failures_small-master.opt | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/mysql-test/suite/innodb/t/innodb_simulate_comp_failures_small-master.opt b/mysql-test/suite/innodb/t/innodb_simulate_comp_failures_small-master.opt
+index fae3205..2ac6dc5 100644
+--- a/mysql-test/suite/innodb/t/innodb_simulate_comp_failures_small-master.opt
++++ b/mysql-test/suite/innodb/t/innodb_simulate_comp_failures_small-master.opt
+@@ -1,2 +1,3 @@
+ --innodb-file-per-table
++--innodb-flush-log-at-trx-commit=2
+ 

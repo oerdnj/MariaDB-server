@@ -1,0 +1,20 @@
+From: Debian MySQL Maintainers <pkg-mysql-maint@lists.alioth.debian.org>
+Date: Sun, 23 Apr 2017 15:10:44 +0200
+Subject: mysqld_multi_confd
+
+---
+ scripts/mysqld_multi.sh | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/scripts/mysqld_multi.sh b/scripts/mysqld_multi.sh
+index a0bc06e..83521de 100644
+--- a/scripts/mysqld_multi.sh
++++ b/scripts/mysqld_multi.sh
+@@ -513,6 +513,7 @@ sub list_defaults_files
+                '@prefix@/my.cnf',
+                ($ENV{MYSQL_HOME} ? "$ENV{MYSQL_HOME}/my.cnf" : undef),
+                $opt{'extra-file'},
++               </etc/mysql/conf.d/*.cnf>,
+                ($ENV{HOME} ? "$ENV{HOME}/.my.cnf" : undef));
+ }
+ 
